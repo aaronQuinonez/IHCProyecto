@@ -77,6 +77,7 @@ import math
 from rythm_game import RhythmGame
 from song_chart import TUTORIAL_FACIL
 from side_contact_detector import SideContactDetector
+from ui_helper import UIHelper
 
 def frame_add_crosshairs(frame,
                          x,
@@ -105,8 +106,8 @@ def main():
         # ------------------------------
 
         # cameras variables
-        left_camera_source = 0  # Left Camera in Camrea Point of View (PoV)
-        right_camera_source = 2  # Right Camera in Camrea Point of View (PoV)
+        left_camera_source = 2  # Left Camera in Camrea Point of View (PoV)
+        right_camera_source = 3  # Right Camera in Camrea Point of View (PoV)
         pixel_width = 640
         pixel_height = 480
 
@@ -233,9 +234,9 @@ def main():
         N_MAYOR_NOTES_X_BANK = 0
 
         # KEYBOARD_WHIITE_N_KEYS + 1 agrega el ultimo DO
-        KEYBOARD_WHIITE_N_KEYS = 4
+        KEYBOARD_WHIITE_N_KEYS = 8  # 8 teclas blancas (Do a Do siguiente octava)
 
-        KEYBOARD_TOT_KEYS = 4
+        KEYBOARD_TOT_KEYS = 13  # 13 teclas totales (8 blancas + 5 negras)
         print('KEYBOARD_TOT_KEYS:{}'.format(KEYBOARD_TOT_KEYS))
         octave_base = 0
 
@@ -244,7 +245,7 @@ def main():
         vk_right = vkb.VirtualKeyboard(pixel_width, pixel_height,
                                       KEYBOARD_WHIITE_N_KEYS)
         # Inicializar juego de ritmo
-        rhythm_game = RhythmGame(num_keys=4)
+        rhythm_game = RhythmGame(num_keys=13)
         game_mode = False  # False = modo libre, True = modo juego
 
         # ------------------------------
@@ -276,7 +277,7 @@ def main():
         fs.start(driver='dsound') # Windows
         # sfid = fs.sfload("/home/mherrera/Proyectos/Desa/\
         #                  00400-VirtualPianoKeyboard/0100-lab/example.sf2")
-        sfid = fs.sfload(r"C:\Users\MI PC\OneDrive\Desktop\fluid\FluidR3_GM.sf2")
+        sfid = fs.sfload(r"C:\Users\USER\fluid\FluidR3_GM.sf2")
 
         # 000-000 Yamaha Grand Piano
         fs.program_select(chan=0, sfid=sfid, bank=0, preset=0)
@@ -321,41 +322,38 @@ def main():
         cycles = 0
         fps = 0
         start = time.time()
-        display_dashboard = True
+        display_dashboard = False  # Dashboard desactivado por defecto para juego simple
+        
+        # Inicializar UI Helper
+        ui_helper = UIHelper(pixel_width * 2, pixel_height)  # Ancho total de ambas cámaras
+        
+        # Optimización: cachear transformaciones de flip
         while True:
             cycles += 1
-            # get frames
-            finished_left, frame_left = cam_left.next(black=True, wait=0.5)
-            finished_right, frame_right = cam_right.next(black=True, wait=0.5)
+            # get frames - reducir wait en modo juego para mejor respuesta
+            wait_time = 0.0 if game_mode else 0.1  # Sin delay en modo juego
+            finished_left, frame_left = cam_left.next(black=True, wait=wait_time)
+            finished_right, frame_right = cam_right.next(black=True, wait=wait_time)
 
-            # if not finished_left:
-            #     cv2.imshow('TEST-l', frame_left)
-            # if not finished_right:
-            #     cv2.imshow('TEST-r', frame_right)
-
-
-            # #################################################################
-            # # # ---- Cameras Calibration ----
-            # frame_left, frame_right = calibration.undistortRectify(
-            #       frame_left, frame_right)
-            # #################################################################
-
-            frame_left = cv2.flip(frame_left, -1)  # Selfie point of view
-            frame_right = cv2.flip(frame_right, -1)  # Selfie point of view
+            # Aplicar flip una sola vez al principio (Selfie point of view)
+            frame_left = cv2.flip(frame_left, -1)
+            frame_right = cv2.flip(frame_right, -1)
 
             hands_left_image = fingers_left_image = []
             hands_right_image = fingers_right_image = []
 
+            # Dibujar teclado siempre
+            vk_left.draw_virtual_keyboard(frame_left)
+            
             # Detect Hands
             if left_detector.findHands(frame_left):
-                vk_left.draw_virtual_keyboard(frame_left)
                 left_detector.drawHands(frame_left)
                 left_detector.drawTips(frame_left)
                 
                 hands_left_image, fingers_left_image = \
                     left_detector.getFingerTipsPos()
             else:
-                vk_left.draw_virtual_keyboard(frame_left)
+                hands_left_image = fingers_left_image = []
 
             if right_detector.findHands(frame_right):
                 #vk_right.draw_virtual_keyboard(frame_right)
@@ -416,14 +414,16 @@ def main():
                     keyboard_n_key=KEYBOARD_TOT_KEYS)
                 
                 if game_mode:
+                    # Actualizar juego ANTES de verificar hits para mejor sincronización
                     rhythm_game.update()
                     
-                    # Verificar aciertos cuando se presiona una tecla
-                    for k_pos, on_key in enumerate(on_map):
-                        if on_key:
-                            hit_result = rhythm_game.check_hit(k_pos)
-                            if hit_result:
-                                print(f"Tecla {k_pos}: {hit_result}")
+                    # Verificar aciertos cuando se presiona una tecla - optimizado
+                    # Solo verificar teclas que están activas (más eficiente)
+                    active_keys = np.where(on_map)[0]
+                    for k_pos in active_keys:
+                        hit_result = rhythm_game.check_hit(k_pos)
+                        if hit_result:
+                            print(f"Tecla {k_pos}: {hit_result}")
                     
                     # Dibujar el juego de ritmo sobre el frame
                     frame_left = rhythm_game.draw(
@@ -457,6 +457,28 @@ def main():
             angler.frame_add_crosshairs(frame_left)
             angler.frame_add_crosshairs(frame_right)
 
+            # Actualizar UI Helper
+            ui_helper.update()
+            
+            # Combinar frames antes de procesar UI
+            if camera_in_front_of_you:
+                h_frames = np.concatenate((frame_right, frame_left), axis=1)
+            else:
+                h_frames = np.concatenate((frame_left, frame_right), axis=1)
+            
+            # Mostrar pantalla de bienvenida si es necesario
+            if ui_helper.show_instructions:
+                welcome_frame = np.zeros((pixel_height, pixel_width * 2, 3), dtype=np.uint8)
+                welcome_frame = ui_helper.draw_welcome_screen(welcome_frame)
+                cv2.imshow(main_window_name, welcome_frame)
+                
+                # Esperar a que se presione una tecla para continuar
+                key = cv2.waitKey(1) & 0xFF
+                if key != 255:  # Cualquier tecla
+                    ui_helper.show_instructions = False
+                    ui_helper.frame_count = ui_helper.instructions_timeout  # No volver a mostrar
+                continue
+
             if display_dashboard:
                 # Display dashboard data
                 fps1 = int(cam_left.current_frame_rate)
@@ -477,6 +499,12 @@ def main():
                                 2,                          # line width
                                 cv2.LINE_AA,
                                 False)
+                
+                # Re-combinar frames después de actualizar el izquierdo
+                if camera_in_front_of_you:
+                    h_frames = np.concatenate((frame_right, frame_left), axis=1)
+                else:
+                    h_frames = np.concatenate((frame_left, frame_right), axis=1)
 
             # Display current target
             # if fingers_left_queue:
@@ -493,15 +521,6 @@ def main():
 
 
             # Display frames
-
-            # cv2.imshow(left_window_name, frame_left)
-            # cv2.imshow(right_window_name, frame_right)
-
-            if camera_in_front_of_you:
-                h_frames = np.concatenate((frame_right, frame_left), axis=1)
-            else:
-                h_frames = np.concatenate((frame_left, frame_right), axis=1)
-
             cv2.imshow(main_window_name, h_frames)
 
 
@@ -532,9 +551,11 @@ def main():
                 game_mode = True
                 rhythm_game.start_game(TUTORIAL_FACIL)
                 print("¡Juego de ritmo iniciado! Presiona 'f' para volver al modo libre")
+                ui_helper.reset_instructions()  # Mostrar instrucciones del juego
             elif key == ord('f'):  # ========== NUEVA TECLA ==========
                 game_mode = False
                 print("Modo libre activado")
+                ui_helper.reset_instructions()  # Mostrar instrucciones del modo libre
             elif key == ord('t'):  # Subir nivel de mesa
                 contact_detector.table_y_threshold -= 5
                 print(f"Nivel de mesa subió a: {contact_detector.table_y_threshold}")

@@ -19,24 +19,41 @@ from toolbox import round_half_up
 
 class VirtualKeyboard():
     __white_map = {
-        0: 0,   # Primera tecla blanca -> nota 0
-        1: 1,   # Segunda tecla blanca -> nota 2
-        2: 2,   # Tercera tecla blanca -> nota 4
-        3: 3    # Cuarta tecla blanca -> nota 5
+        0: 0,   # Primera tecla blanca -> nota 0 (Do C4)
+        1: 2,   # Segunda tecla blanca -> nota 2 (Re D4)
+        2: 4,   # Tercera tecla blanca -> nota 4 (Mi E4)
+        3: 5,   # Cuarta tecla blanca -> nota 5 (Fa F4)
+        4: 7,   # Quinta tecla blanca -> nota 7 (Sol G4)
+        5: 9,   # Sexta tecla blanca -> nota 9 (La A4)
+        6: 11,  # Séptima tecla blanca -> nota 11 (Si B4)
+        7: 12   # Octava tecla blanca -> nota 12 (Do C5)
     }
 
     __black_map = {
-        0: None,
-        1: None,
-        2: None,
-        3: None
+        0: 1,   # Tecla negra entre Do-Re -> nota 1 (Do#/Reb)
+        1: 3,   # Tecla negra entre Re-Mi -> nota 3 (Re#/Mib)
+        2: None, # No hay tecla negra entre Mi-Fa
+        3: 6,   # Tecla negra entre Fa-Sol -> nota 6 (Fa#/Solb)
+        4: 8,   # Tecla negra entre Sol-La -> nota 8 (Sol#/Lab)
+        5: 10,  # Tecla negra entre La-Si -> nota 10 (La#/Sib)
+        6: None, # No hay tecla negra entre Si-Do
+        7: None  # No hay tecla negra después del último Do
     }
 
     __keyboard_piano_map = {
-        0: 60,  # DO (C4)
-        1: 62,  # RE (D4)
-        2: 64,  # MI (E4)
-        3: 65   # FA (F4)
+        0: 60,  # Do (C4)
+        1: 61,  # Do# / Reb (C#4/Db4)
+        2: 62,  # Re (D4)
+        3: 63,  # Re# / Mib (D#4/Eb4)
+        4: 64,  # Mi (E4)
+        5: 65,  # Fa (F4)
+        6: 66,  # Fa# / Solb (F#4/Gb4)
+        7: 67,  # Sol (G4)
+        8: 68,  # Sol# / Lab (G#4/Ab4)
+        9: 69,  # La (A4)
+        10: 70, # La# / Sib (A#4/Bb4)
+        11: 71, # Si (B4)
+        12: 72  # Do (C5)
     }
 
     def __init__(self, canvas_w, canvas_h, kb_white_n_keys):
@@ -92,7 +109,6 @@ class VirtualKeyboard():
     # def add_key_key_upper_zone(self):
 
     def draw_virtual_keyboard(self, img):
-        # TODO: Mejorar esto para hacerlo solo una vez
         # Prepara shapes
         # Initialize blank mask image of same dimensions for drawing the shapes
         shapes = np.zeros_like(img, np.uint8)
@@ -113,14 +129,18 @@ class VirtualKeyboard():
             x_line_pos = self.kb_x0 + self.white_key_width * (p+1)
 
             # Draw black keys
-
+            # Para 8 teclas blancas (Do a Do siguiente octava):
+            # Las teclas negras están entre: 0-1 (Do#), 1-2 (Re#), 3-4 (Fa#), 4-5 (Sol#), 5-6 (La#)
+            # No hay tecla negra entre E-F (posición 2-3) ni B-C (posición 6-7)
             if p not in self.keys_without_black:
-                if p in (0, 3, 7, 10, 14, 17):
+                # Teclas negras a la izquierda: Do#, Fa#, Sol#
+                if p in (0, 3, 4):
                     b_bk_x0 = int(round_half_up(
                         x_line_pos - self.black_key_width*(2/3)))
                     b_bk_x1 = int(round_half_up(
                         x_line_pos + self.black_key_width*(1/3)))
-                elif p in (1, 5, 8, 12, 15, 19):
+                # Teclas negras a la derecha: Re#, La#
+                elif p in (1, 5):
                     b_bk_x0 = int(round_half_up(
                         x_line_pos - self.black_key_width*(1/3)))
                     b_bk_x1 = int(round_half_up(
@@ -131,6 +151,14 @@ class VirtualKeyboard():
                     b_bk_x1 = int(round_half_up(
                         x_line_pos + self.black_key_width/2))
 
+                cv2.rectangle(
+                    img=img,
+                    pt1=(b_bk_x0, self.kb_y0),
+                    pt2=(b_bk_x1, int(
+                        round_half_up(self.kb_y0 + self.black_key_heigth))),
+                    color=(0, 0, 0),
+                    thickness=cv2.FILLED)
+
                 key_coord = \
                     self.new_key(p,
                                  (b_bk_x0, self.kb_y0),
@@ -139,14 +167,6 @@ class VirtualKeyboard():
                                       round_half_up(self.kb_y0 +
                                                     self.black_key_heigth))))
                 self.upper_zone_divisions.append(key_coord)
-
-                cv2.rectangle(
-                    img=img,
-                    pt1=(b_bk_x0, self.kb_y0),
-                    pt2=(b_bk_x1, int(
-                        round_half_up(self.kb_y0 + self.black_key_heigth))),
-                    color=(0, 0, 0),
-                    thickness=cv2.FILLED)
 
             cv2.line(img=img,
                      pt1=(int(round_half_up(x_line_pos)), self.kb_y0),
@@ -178,6 +198,7 @@ class VirtualKeyboard():
 
         cv2.rectangle(img, (self.kb_x0, self.kb_y0),
                       (self.kb_x1, self.kb_y1), (255, 0, 0), 2)
+
 
     def intersect(self, pointXY):
         if pointXY[0] > self.kb_x0 and pointXY[0] < self.kb_x1 and \
@@ -225,19 +246,13 @@ class VirtualKeyboard():
             # print('find_key:upper zone key {}'.format(key))
             if key == -1:
                 key = x/self.white_key_width
-                # print('find_key:key {}'.format(key))
                 key = math.floor(key)
-                # print('find_key:ceil key {}'.format(key))
-                print(f"Tecla superior detectada: {key}")  # DEBUG
                 return self.__white_map[int(key)]
             else:
                 return self.__black_map[int(key)]
         else:
             key = x/self.white_key_width
-            # print('find_key:key {}'.format(key))
             key = math.floor(key)
-            # print('find_key:ceil key {}'.format(key))
-            print(f"Tecla inferior detectada: {key}")  # DEBUG
             return self.__white_map[int(key)]
 
     def note_from_key(self, key):
