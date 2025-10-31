@@ -28,15 +28,15 @@ class RhythmGame:
         self.perfect_count = 0
         self.good_count = 0
         self.miss_count = 0
-        
+    
         # Configuración visual
-        self.note_speed = 100  # Píxeles por segundo
+        self.note_speed = 50  # Píxeles por segundo (reducido para facilitar aprendizaje)
         self.hit_zone_y = 400  # Posición Y de la zona de acierto
         self.hit_zone_height = 40
         
-        # Ventanas de tiempo (en segundos)
-        self.perfect_window = 0.05  # ±50ms para perfecto
-        self.good_window = 0.15  # ±150ms para bueno
+        # Ventanas de tiempo (en segundos) - Reducidas para mayor precisión
+        self.perfect_window = 0.10  # ±100ms para perfecto
+        self.good_window = 0.25  # ±250ms para bueno
         
         # Control de tiempo
         self.start_time = None
@@ -67,15 +67,18 @@ class RhythmGame:
             
         current_time = time.time() - self.start_time
         
-        # Actualizar posición de cada nota
+        # Actualizar posición de cada nota - optimizado
         for note in self.notes:
             if not note.hit and not note.missed:
                 # Calcular posición basada en tiempo
                 time_since_spawn = current_time - note.spawn_time
+                if time_since_spawn < 0:
+                    continue  # Saltar notas que aún no deben aparecer
+                    
                 note.y_pos = int(time_since_spawn * self.note_speed)
                 
-                # Verificar si se pasó la nota
-                if current_time > note.hit_time + self.good_window:
+                # Verificar si se pasó la nota (con margen aumentado)
+                if current_time > note.hit_time + self.good_window * 1.5:
                     note.missed = True
                     self.miss_count += 1
                     self.combo = 0
@@ -83,24 +86,31 @@ class RhythmGame:
     def check_hit(self, key_pressed):
         """
         Verifica si se presionó la tecla correcta en el momento correcto
-        key_pressed: número de tecla (0-3)
+        Optimizado para respuesta inmediata
+        key_pressed: número de tecla (0-12)
         """
         if not self.is_playing:
             return None
             
         current_time = time.time() - self.start_time
         
-        # Buscar la nota más cercana en esa tecla
+        # Buscar la nota más cercana en esa tecla - optimizado
         best_note = None
         best_diff = float('inf')
         
+        # Filtrar solo notas relevantes (cerca del tiempo de hit)
         for note in self.notes:
             if note.key == key_pressed and not note.hit and not note.missed:
-                time_diff = abs(current_time - note.hit_time)
+                # Solo considerar notas que están cerca del tiempo de hit
+                time_to_hit = note.hit_time - current_time
                 
-                if time_diff < best_diff and time_diff <= self.good_window:
-                    best_diff = time_diff
-                    best_note = note
+                # Rango extendido: desde antes del hit hasta después
+                if -self.good_window <= time_to_hit <= self.good_window:
+                    time_diff = abs(time_to_hit)
+                    
+                    if time_diff < best_diff:
+                        best_diff = time_diff
+                        best_note = note
                     
         if best_note:
             best_note.hit = True
@@ -117,9 +127,9 @@ class RhythmGame:
                 self.good_count += 1
                 return "GOOD"
         else:
-            # Presionó tecla incorrecta
-            self.combo = 0
-            return "MISS"
+            # Presionó tecla incorrecta o fuera de tiempo
+            # No romper combo si solo está fuera de rango
+            pass
             
         return None
         
@@ -145,14 +155,21 @@ class RhythmGame:
                      (keyboard_x1, self.hit_zone_y + self.hit_zone_height),
                      (0, 255, 0), 2)
         
-        # Dibujar notas
-        colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]
+        # Dibujar notas - 13 colores para 13 teclas
+        colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0),
+                  (255, 0, 255), (0, 255, 255), (128, 0, 128),
+                  (255, 165, 0), (255, 192, 203), (128, 128, 0),
+                  (0, 128, 128), (128, 0, 0), (0, 0, 128)]
         
         for note in self.notes:
-            if not note.hit and not note.missed and note.y_pos >= 0:
+            # Solo dibujar notas visibles (optimización de rendimiento)
+            if not note.hit and not note.missed and 0 <= note.y_pos <= self.hit_zone_y + 100:
                 # Calcular posición horizontal de la nota
-                note_x0 = int(keyboard_x0 + note.key * key_width + 5)
-                note_x1 = int(keyboard_x0 + (note.key + 1) * key_width - 5)
+                # Para 13 teclas, mapear a las 8 teclas blancas principales
+                # note.key es 0-12, mapear a posición en teclado de 8 blancas
+                white_key_index = note.key % 8  # Mapeo simple a las 8 teclas blancas
+                note_x0 = int(keyboard_x0 + white_key_index * key_width + 5)
+                note_x1 = int(keyboard_x0 + (white_key_index + 1) * key_width - 5)
                 note_y0 = note.y_pos
                 note_y1 = note.y_pos + 30
                 
@@ -162,7 +179,7 @@ class RhythmGame:
                             (note_x1, note_y1), color, -1)
                 cv2.rectangle(frame, (note_x0, note_y0), 
                             (note_x1, note_y1), (255, 255, 255), 2)
-                
+        
         # Dibujar información del juego
         self.draw_ui(frame)
         

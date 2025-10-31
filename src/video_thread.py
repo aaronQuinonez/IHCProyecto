@@ -73,10 +73,19 @@ class VideoThread:
         self.video_init_wait_time = 0.5
 
         self.resource = cv2.VideoCapture(self.video_source)
+        
+        # Optimización para máximo FPS
+        # Reducir buffer size para menor latencia
+        self.resource.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        # Configurar resolución y FPS
         self.resource.set(cv2.CAP_PROP_FRAME_WIDTH, self.video_width)
         self.resource.set(cv2.CAP_PROP_FRAME_HEIGHT, self.video_height)
         self.resource.set(cv2.CAP_PROP_FPS, self.video_frame_rate)
         self.resource.set(cv2.CAP_PROP_FOURCC, self.video_fourcc)
+        # Desactivar auto-exposición y autofocus para mejor rendimiento
+        self.resource.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)  # Modo manual
+        self.resource.set(cv2.CAP_PROP_AUTOFOCUS, 0)  # Desactivar autofocus
+        
         time.sleep(self.video_init_wait_time)
     
         if not self.resource.isOpened(): 

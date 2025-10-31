@@ -35,7 +35,6 @@ class KeyboardMap:
                     # CAMBIO CLAVE: Usar contacto en lugar de distancia
                     if finger_id in contacts and contacts[finger_id]:
                         curr_map[key] = True
-                        print(f"Tecla {key} ACTIVADA por contacto!")
         
         # Lógica de on/off (igual que antes)
         if np.all(curr_map == False) and np.all(self.prev_map == False):
