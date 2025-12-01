@@ -19,42 +19,35 @@ from src.common.toolbox import round_half_up
 
 class VirtualKeyboard():
     __white_map = {
-        0: 0,   # Primera tecla blanca -> nota 0 (Do C4)
-        1: 2,   # Segunda tecla blanca -> nota 2 (Re D4)
-        2: 4,   # Tercera tecla blanca -> nota 4 (Mi E4)
-        3: 5,   # Cuarta tecla blanca -> nota 5 (Fa F4)
-        4: 7,   # Quinta tecla blanca -> nota 7 (Sol G4)
-        5: 9,   # Sexta tecla blanca -> nota 9 (La A4)
-        6: 11,  # Séptima tecla blanca -> nota 11 (Si B4)
-        7: 12   # Octava tecla blanca -> nota 12 (Do C5)
+        # Primera octava (Do a Si)
+        0: 0,   1: 2,   2: 4,   3: 5,   4: 7,   5: 9,   6: 11,
+        # Segunda octava (Do a Si)
+        7: 12,  8: 14,  9: 16,  10: 17, 11: 19, 12: 21, 13: 23,
+        # Tercera octava (Do a Si)
+        14: 24, 15: 26, 16: 28, 17: 29, 18: 31, 19: 33, 20: 35,
+        # Cuarta octava (Do a La)
+        21: 36, 22: 38, 23: 40, 24: 41, 25: 43, 26: 45
     }
 
     __black_map = {
-        0: 1,   # Tecla negra entre Do-Re -> nota 1 (Do#/Reb)
-        1: 3,   # Tecla negra entre Re-Mi -> nota 3 (Re#/Mib)
-        2: None, # No hay tecla negra entre Mi-Fa
-        3: 6,   # Tecla negra entre Fa-Sol -> nota 6 (Fa#/Solb)
-        4: 8,   # Tecla negra entre Sol-La -> nota 8 (Sol#/Lab)
-        5: 10,  # Tecla negra entre La-Si -> nota 10 (La#/Sib)
-        6: None, # No hay tecla negra entre Si-Do
-        7: None  # No hay tecla negra después del último Do
+        # Primera octava
+        0: 1,   1: 3,   2: None, 3: 6,   4: 8,   5: 10,  6: None,
+        # Segunda octava
+        7: 13,  8: 15,  9: None, 10: 18, 11: 20, 12: 22, 13: None,
+        # Tercera octava
+        14: 25, 15: 27, 16: None, 17: 30, 18: 32, 19: 34, 20: None,
+        # Cuarta octava
+        21: 37, 22: 39, 23: None, 24: 42, 25: 44, 26: None
     }
 
     __keyboard_piano_map = {
-        0: 60,  # Do (C4)
-        1: 61,  # Do# / Reb (C#4/Db4)
-        2: 62,  # Re (D4)
-        3: 63,  # Re# / Mib (D#4/Eb4)
-        4: 64,  # Mi (E4)
-        5: 65,  # Fa (F4)
-        6: 66,  # Fa# / Solb (F#4/Gb4)
-        7: 67,  # Sol (G4)
-        8: 68,  # Sol# / Lab (G#4/Ab4)
-        9: 69,  # La (A4)
-        10: 70, # La# / Sib (A#4/Bb4)
-        11: 71, # Si (B4)
-        12: 72  # Do (C5)
+        0: 60,  1: 61,  2: 62,  3: 63,  4: 64,  5: 65,  6: 66,  7: 67,
+        8: 68,  9: 69,  10: 70, 11: 71, 12: 72, 13: 73, 14: 74, 15: 75,
+        16: 76, 17: 77, 18: 78, 19: 79, 20: 80, 21: 81, 22: 82, 23: 83,
+        24: 84, 25: 85, 26: 86, 27: 87, 28: 88, 29: 89, 30: 90, 31: 91,
+        32: 92, 33: 93, 34: 94, 35: 95, 36: 96, 37: 97
     }
+
 
     def __init__(self, canvas_w, canvas_h, kb_white_n_keys):
         self.img = None

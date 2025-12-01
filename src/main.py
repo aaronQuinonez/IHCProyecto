@@ -70,6 +70,7 @@ from src.vision import video_thread, angles
 from src.vision.hand_detector import HandDetector
 from src.vision import keyboard_mapper as kbm
 from src.vision.side_contact_detector import SideContactDetector
+from src.vision.stereo_config import StereoConfig
 
 # --- Piano ---
 from src.piano import virtual_keyboard as vkb
@@ -106,38 +107,37 @@ def frame_add_crosshairs(frame,
 def main():
 
     try:
+        # Cargar configuración estéreo centralizada
+        config = StereoConfig()
+        config.print_config()
 
         # ------------------------------
         # set up cameras
         # ------------------------------
 
         # cameras variables
-        left_camera_source = 1  # Left Camera in Camrea Point of View (PoV)
-        right_camera_source = 2  # Right Camera in Camrea Point of View (PoV)
-        pixel_width = 640
-        pixel_height = 480
+        left_camera_source = config.LEFT_CAMERA_SOURCE
+        right_camera_source = config.RIGHT_CAMERA_SOURCE
+        pixel_width = config.PIXEL_WIDTH
+        pixel_height = config.PIXEL_HEIGHT
 
-        # Logi C920s HD Pro Webcam
-        camera_hFoV = 70.42  # Horizontal Field of View
-        camera_vFoV = 43.3   # Vertical Field of View
-        hFoV_angle_rectification = 21.42 # Field of View (FoV) rectifcation
-        vFoV_angle_rectification = \
-            camera_vFoV * hFoV_angle_rectification/camera_hFoV
+        # Logi C920s HD Pro Webcam - Calibración óptica
+        camera_hFoV = config.CAMERA_H_FOV
+        camera_vFoV = config.CAMERA_V_FOV
+        hFoV_angle_rectification = config.H_FOV_RECTIFICATION
+        vFoV_angle_rectification = config.V_FOV_RECTIFICATION
 
-        angle_width = camera_hFoV - hFoV_angle_rectification
-        angle_height = camera_vFoV - vFoV_angle_rectification
+        angle_width = config.ANGLE_WIDTH
+        angle_height = config.ANGLE_HEIGHT
 
         # FPS
-        frame_rate = 30
-        camera_separation = 14.21 # cms
+        frame_rate = config.FRAME_RATE
+        camera_separation = config.CAMERA_SEPARATION
 
-        camera_in_front_of_you = True
+        camera_in_front_of_you = config.CAMERA_IN_FRONT_OF_YOU
 
-        # TODO: Better if is calculated in te setup with a image in the 
-        # virtual center of the stereo image
-        
         # Virtual Keyboard Center point distance (cms)
-        vkb_center_point_camera_dist = 71 # 66.8
+        vkb_center_point_camera_dist = config.VKB_CENTER_DISTANCE
 
             # cam_resource = video_thread.VideoThread(
             #     video_source=c_id,
@@ -239,26 +239,25 @@ def main():
         N_BANK = 0
         N_MAYOR_NOTES_X_BANK = 0
 
-        # KEYBOARD_WHIITE_N_KEYS + 1 agrega el ultimo DO
-        KEYBOARD_WHIITE_N_KEYS = 8  # 8 teclas blancas (Do a Do siguiente octava)
+        KEYBOARD_WHIITE_N_KEYS = config.KEYBOARD_WHITE_KEYS
 
-        KEYBOARD_TOT_KEYS = 13  # 13 teclas totales (8 blancas + 5 negras)
+        KEYBOARD_TOT_KEYS = config.KEYBOARD_TOTAL_KEYS
         print('KEYBOARD_TOT_KEYS:{}'.format(KEYBOARD_TOT_KEYS))
-        octave_base = 0
+        octave_base = config.OCTAVE_BASE
 
         vk_left = vkb.VirtualKeyboard(pixel_width, pixel_height,
                                       KEYBOARD_WHIITE_N_KEYS)
         vk_right = vkb.VirtualKeyboard(pixel_width, pixel_height,
                                       KEYBOARD_WHIITE_N_KEYS)
         # Inicializar juego de ritmo
-        rhythm_game = RhythmGame(num_keys=13)
+        rhythm_game = RhythmGame(num_keys=KEYBOARD_TOT_KEYS)
         game_mode = False  # False = modo libre, True = modo juego
 
         # ------------------------------
         # set up keyboards map
         # -----------------------------
-        km = kbm.KeyboardMap()
-        contact_detector = SideContactDetector(canvas_height=pixel_height)
+        km = kbm.KeyboardMap(depth_threshold=config.DEPTH_THRESHOLD)
+        contact_detector = SideContactDetector(canvas_height=pixel_height)  # Mantenido para compatibilidad
 
         # ------------------------------
         # set up angles
@@ -269,11 +268,11 @@ def main():
         angler.build_frame()
 
         left_detector = HandDetector(staticImageMode=False,
-                                                  detectionCon=0.75,
-                                                  trackCon=0.5)
+                                                  detectionCon=config.HAND_DETECTION_CONFIDENCE,
+                                                  trackCon=config.HAND_TRACKING_CONFIDENCE)
         right_detector = HandDetector(staticImageMode=False,
-                                                   detectionCon=0.75,
-                                                   trackCon=0.5)
+                                                   detectionCon=config.HAND_DETECTION_CONFIDENCE,
+                                                   trackCon=config.HAND_TRACKING_CONFIDENCE)
 
         # ------------------------------
         # set up synth
@@ -281,11 +280,7 @@ def main():
 
         fs = fluidsynth.Synth()
         fs.start(driver='dsound') # Windows
-        # sfid = fs.sfload("/home/mherrera/Proyectos/Desa/\
-        #                  00400-VirtualPianoKeyboard/0100-lab/example.sf2")
-        sfid = fs.sfload(
-            r"C:\CodingWindows\IHC_Proyecto_Fork\IHCProyecto\utils\fluid\FluidR3_GM.sf2"
-        )
+        sfid = fs.sfload(config.SOUNDFONT_PATH)
 
 
         # 000-000 Yamaha Grand Piano
@@ -331,7 +326,8 @@ def main():
         cycles = 0
         fps = 0
         start = time.time()
-        display_dashboard = False  # Dashboard desactivado por defecto para juego simple
+        display_dashboard = config.DISPLAY_DASHBOARD_DEFAULT
+        finger_depths_dict = {}  # Inicializar para evitar referencias no definidas
         
         # Inicializar UI Helper
         ui_helper = UIHelper(pixel_width * 2, pixel_height)  # Ancho total de ambas cámaras
@@ -383,6 +379,8 @@ def main():
             if (len(fingers_left_image) > 0 and len(fingers_right_image) > 0):
 
                 fingers_dist = []
+                finger_depths_dict = {}  # Dict para pasar profundidades a KeyboardMap
+                
                 for finger_left, finger_right in \
                     zip(fingers_left_image, fingers_right_image):
                     # print('finger_left:{}'.format(finger_left))
@@ -405,7 +403,13 @@ def main():
                     # angle normalization
                     delta_y = 0.006509695290859 * X_local * X_local + \
                         0.039473684210526 * -1 * X_local # + vkb_center_point_camera_dist
-                    fingers_dist.append(D_local-delta_y)
+                    depth_corrected = D_local - delta_y
+                    fingers_dist.append(depth_corrected)
+                    
+                    # Guardar profundidad corregida para cada dedo
+                    finger_id = (finger_left[0], finger_left[1])
+                    finger_depths_dict[finger_id] = depth_corrected
+                    
                     # if finger_left[0] == 0 and 
                     if finger_left[0] == 0 and finger_left[1] == left_detector.mpHands.HandLandmark.INDEX_FINGER_TIP:
                         x_left_finger_screen_pos =  finger_left[2]
@@ -419,7 +423,7 @@ def main():
                 on_map, off_map = km.get_kayboard_map(
                     virtual_keyboard=vk_left,
                     fingertips_pos=fingers_left_image,
-                    contact_detector=contact_detector,  # NUEVO PARÁMETRO
+                    finger_depths=finger_depths_dict,  # Pasar profundidades 3D
                     keyboard_n_key=KEYBOARD_TOT_KEYS)
                 
                 if game_mode:
@@ -493,7 +497,7 @@ def main():
                 fps1 = int(cam_left.current_frame_rate)
                 fps2 = int(cam_right.current_frame_rate)
                 cps_avg = int(round_half_up(fps))  # Average Cycles per second
-                text = 'X: {:3.1f}\nY: {:3.1f}\nZ: {:3.1f}\nD: {:3.1f}\nDr: {:3.1f}\nFPS:{}/{}\nCPS:{}'.format(X, Y, Z, D, D-delta_y, fps1, fps2, cps_avg)
+                text = 'X: {:3.1f}\nY: {:3.1f}\nZ: {:3.1f}\nD: {:3.1f}\nDr: {:3.1f}\nDepth Thr: {:.2f}\nFPS:{}/{}\nCPS:{}'.format(X, Y, Z, D, D-delta_y, km.depth_threshold, fps1, fps2, cps_avg)
                 lineloc = 0
                 lineheight = 30
                 for t in text.split('\n'):
@@ -565,12 +569,19 @@ def main():
                 game_mode = False
                 print("Modo libre activado")
                 ui_helper.reset_instructions()  # Mostrar instrucciones del modo libre
-            elif key == ord('t'):  # Subir nivel de mesa
-                contact_detector.table_y_threshold -= 5
-                print(f"Nivel de mesa subió a: {contact_detector.table_y_threshold}")
-            elif key == ord('b'):  # Bajar nivel de mesa
-                contact_detector.table_y_threshold += 5
-                print(f"Nivel de mesa bajó a: {contact_detector.table_y_threshold}")
+            elif key == ord('t'):  # Subir nivel de mesa (ESTÉREO: aumentar umbral de profundidad)
+                new_threshold = km.depth_threshold + 0.2
+                km.set_depth_threshold(new_threshold)
+                print(f"Umbral de profundidad aumentado a: {new_threshold:.2f} cm")
+            elif key == ord('b'):  # Bajar nivel de mesa (ESTÉREO: disminuir umbral de profundidad)
+                new_threshold = max(0.5, km.depth_threshold - 0.2)
+                km.set_depth_threshold(new_threshold)
+                print(f"Umbral de profundidad disminuido a: {new_threshold:.2f} cm")
+            elif key == ord('p'):  # Mostrar profundidades detectadas
+                if display_dashboard:
+                    print(f"Profundidades detectadas (D - delta_y):")
+                    for fid, depth in finger_depths_dict.items():
+                        print(f"  Dedo {fid}: {depth:.2f} cm")
             elif key != 255:
                 print('KEY PRESS:', [chr(key)])
 
