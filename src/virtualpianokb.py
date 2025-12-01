@@ -106,8 +106,8 @@ def main():
         # ------------------------------
 
         # cameras variables
-        left_camera_source = 2  # Left Camera in Camrea Point of View (PoV)
-        right_camera_source = 3  # Right Camera in Camrea Point of View (PoV)
+        left_camera_source = 1  # Left Camera in Camrea Point of View (PoV)
+        right_camera_source = 2  # Right Camera in Camrea Point of View (PoV)
         pixel_width = 640
         pixel_height = 480
 
@@ -277,7 +277,7 @@ def main():
         fs.start(driver='dsound') # Windows
         # sfid = fs.sfload("/home/mherrera/Proyectos/Desa/\
         #                  00400-VirtualPianoKeyboard/0100-lab/example.sf2")
-        sfid = fs.sfload(r"C:\Users\USER\fluid\FluidR3_GM.sf2")
+        sfid = fs.sfload(r"C:\CodingWindows\IHCProyecto\utils\fluid\FluidR3_GM.sf2")
 
         # 000-000 Yamaha Grand Piano
         fs.program_select(chan=0, sfid=sfid, bank=0, preset=0)

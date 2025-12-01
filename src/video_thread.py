@@ -23,10 +23,10 @@ import numpy as np
 class VideoThread:
 
     def __init__(self,
-                 video_source=0,  # device, stream or file
+                 video_source=2,  # device, stream or file
                  video_width=640,
                  video_height=480,
-                 video_frame_rate=10,
+                 video_frame_rate=30,
                  buffer_all=False,
                  video_fourcc=cv2.VideoWriter_fourcc(*"MJPG"),
                  try_to_reconnect=False):
