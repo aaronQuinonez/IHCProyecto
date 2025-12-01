@@ -446,7 +446,7 @@ def main():
                         vk_left.white_key_width
                     )
                 
-                if np.any((on_map == True)):
+                if np.any(on_map):
                     for k_pos, on_key in enumerate(on_map):
                         # print('k_pos:{}   on_key:{}'.format(k_pos, on_key))
                         if on_key:
@@ -456,7 +456,7 @@ def main():
                                 key=vk_left.note_from_key(k_pos)+octave_base,
                                 vel=127*2//3)
 
-                if np.any((off_map == True)):
+                if np.any(off_map):
                     for k_pos, off_key in enumerate(off_map):
                         # print('k_pos:{}   off_key:{}'.format(k_pos, off_key))
                         if off_key:

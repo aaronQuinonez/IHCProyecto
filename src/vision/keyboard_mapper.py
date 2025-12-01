@@ -43,9 +43,13 @@ class KeyboardMap:
         Returns:
             (on_map, off_map): Arrays booleanos de teclas presionadas/liberadas
         """
-        curr_map = np.full((keyboard_n_key, 1), False, dtype=bool)
-        on_map = np.full((keyboard_n_key, 1), False, dtype=bool)
-        off_map = np.full((keyboard_n_key, 1), False, dtype=bool)
+        curr_map = np.full(keyboard_n_key, False, dtype=bool)
+        on_map = np.full(keyboard_n_key, False, dtype=bool)
+        off_map = np.full(keyboard_n_key, False, dtype=bool)
+
+        # Inicializar prev_map si es la primera llamada
+        if len(self.prev_map) == 0:
+            self.prev_map = np.full(keyboard_n_key, False, dtype=bool)
 
         # Si no hay información de profundidad, usar parámetro anterior (compatibilidad)
         if finger_depths is None:
@@ -79,11 +83,8 @@ class KeyboardMap:
                         curr_map[key] = True
         
         # Lógica de detección de cambios (on/off)
-        if np.all(curr_map == False) and np.all(self.prev_map == False):
-            pass
-        else:
-            on_map = np.logical_and(curr_map, np.logical_not(self.prev_map))
-            off_map = np.logical_and(self.prev_map, np.logical_not(curr_map))
+        on_map = np.logical_and(curr_map, np.logical_not(self.prev_map))
+        off_map = np.logical_and(self.prev_map, np.logical_not(curr_map))
             
         self.prev_map = curr_map.copy()
         return on_map, off_map

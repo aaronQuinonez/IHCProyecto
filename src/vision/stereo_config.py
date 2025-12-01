@@ -50,8 +50,8 @@ class StereoConfig:
     SOUNDFONT_PATH = r"C:\CodingWindows\IHC_Proyecto_Fork\IHCProyecto\utils\fluid\FluidR3_GM.sf2"
     
     # ==================== TECLADO VIRTUAL ====================
-    KEYBOARD_TOTAL_KEYS = 38        # ← Cambiar de 22 a 38
-    KEYBOARD_WHITE_KEYS = 27        # Se calcula: 38 * 7/10 ≈ 27
+    KEYBOARD_TOTAL_KEYS = 24        # 2 octavas completas: C-B x2
+    KEYBOARD_WHITE_KEYS = 14        # 7 teclas blancas por octava
     OCTAVE_BASE = 0                 # Octava base
     # ==================== MÉTODOS ====================
     
