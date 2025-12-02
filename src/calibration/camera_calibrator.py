@@ -50,6 +50,7 @@ class CameraCalibrator:
         self.camera_matrix = None
         self.distortion_coeffs = None
         self.reprojection_error = None
+        self.is_calibrated = False
         
     def detect_chessboard(self, frame):
         """
@@ -192,6 +193,7 @@ class CameraCalibrator:
         self.camera_matrix = camera_matrix
         self.distortion_coeffs = dist_coeffs
         self.reprojection_error = mean_error
+        self.is_calibrated = True
         
         # Mostrar resultados
         print(f"✓ Calibración completada")

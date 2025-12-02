@@ -17,6 +17,7 @@ class CalibrationConfig:
     CALIBRATION_DATA_DIR = BASE_DIR / "camcalibration"
     CALIBRATION_IMAGES_DIR = CALIBRATION_DATA_DIR / "images"
     CALIBRATION_FILE = CALIBRATION_DATA_DIR / "calibration.json"
+    STEREO_MAP_FILE = CALIBRATION_DATA_DIR / "stereoMap.xml"  # Archivo legacy (si existe)
     
     # ==================== TABLERO DE CALIBRACIÓN ====================
     # TABLERO ESTÁNDAR FIJO: 8x8 cuadrados = 7x7 esquinas internas
@@ -144,6 +145,87 @@ class CalibrationConfig:
         # Crear subdirectorios para cada cámara
         (cls.CALIBRATION_IMAGES_DIR / "left").mkdir(exist_ok=True)
         (cls.CALIBRATION_IMAGES_DIR / "right").mkdir(exist_ok=True)
+    
+    @classmethod
+    def calibration_exists(cls):
+        """
+        Verifica si existe una calibración válida guardada
+        
+        Returns:
+            bool: True si existe calibración completa
+        """
+        if not cls.CALIBRATION_FILE.exists():
+            return False
+        
+        try:
+            import json
+            with open(cls.CALIBRATION_FILE, 'r') as f:
+                data = json.load(f)
+            
+            # Verificar que tenga los campos esenciales
+            required_fields = ['left_camera', 'right_camera', 'board_config']
+            has_required = all(field in data for field in required_fields)
+            
+            if not has_required:
+                return False
+            
+            # Verificar que cada cámara tenga matriz y distorsión
+            for cam in ['left_camera', 'right_camera']:
+                if 'camera_matrix' not in data[cam] or 'distortion_coeffs' not in data[cam]:
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            print(f"⚠ Error al verificar calibración: {e}")
+            return False
+    
+    @classmethod
+    def get_calibration_summary(cls):
+        """
+        Obtiene un resumen de la calibración existente
+        
+        Returns:
+            dict: Resumen con información clave o None si no existe
+        """
+        if not cls.calibration_exists():
+            return None
+        
+        try:
+            import json
+            import numpy as np
+            from datetime import datetime
+            import os
+            
+            with open(cls.CALIBRATION_FILE, 'r') as f:
+                data = json.load(f)
+            
+            # Fecha de modificación
+            timestamp = os.path.getmtime(cls.CALIBRATION_FILE)
+            date_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+            
+            summary = {
+                'fecha': date_str,
+                'version': data.get('version', '1.0'),
+                'tablero': f"{data['board_config']['rows']+1}x{data['board_config']['cols']+1}",
+                'square_size': data['board_config']['square_size_mm'],
+                'error_left': data['left_camera'].get('reprojection_error', 'N/A'),
+                'error_right': data['right_camera'].get('reprojection_error', 'N/A'),
+                'imagenes_left': data['left_camera'].get('num_images', 'N/A'),
+                'imagenes_right': data['right_camera'].get('num_images', 'N/A'),
+                'tiene_estereo': 'stereo' in data and data['stereo'] is not None
+            }
+            
+            if summary['tiene_estereo']:
+                summary['baseline_cm'] = data['stereo'].get('baseline_cm', 'N/A')
+                summary['error_stereo'] = data['stereo'].get('rms_error', 'N/A')
+                summary['pares_stereo'] = data['stereo'].get('num_pairs', 'N/A')
+            
+            return summary
+            
+        except Exception as e:
+            print(f"⚠ Error al leer resumen: {e}")
+            return None
     
     @classmethod
     def get_total_photos(cls):
