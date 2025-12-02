@@ -682,7 +682,126 @@ class CalibrationManager:
         if rect_result is None:
             print("⚠️  Advertencia: No se pudo calcular rectificación")
         
+        # Mostrar estadísticas finales de Fase 2
+        self._show_phase2_statistics(stereo_result, pairs_count)
+        
         return True
+    
+    def _show_phase2_statistics(self, stereo_result, pairs_count):
+        """Muestra estadísticas finales de la Fase 2 con interfaz visual"""
+        window_name = "FASE 2 - Estadisticas Finales"
+        cv2.namedWindow(window_name)
+        cv2.moveWindow(window_name, self.resolution[0]//4, self.resolution[1]//4)
+        
+        # Extraer datos
+        baseline_cm = stereo_result['baseline_cm']
+        rms_error = stereo_result['rms_error']
+        
+        # Imprimir en consola
+        print("\n" + "="*70)
+        print("📊 ESTADÍSTICAS DE CALIBRACIÓN ESTÉREO (FASE 2)")
+        print("="*70)
+        print(f"✓ Pares capturados:     {pairs_count}")
+        print(f"✓ Baseline:             {baseline_cm:.2f} cm")
+        print(f"✓ Error RMS:            {rms_error:.6f}")
+        print(f"✓ Cámara izquierda:     {self.calibrator_left.reprojection_error:.6f} px")
+        print(f"✓ Cámara derecha:       {self.calibrator_right.reprojection_error:.6f} px")
+        print("="*70)
+        
+        # Crear frame para mostrar estadísticas
+        stats_frame = np.zeros((self.resolution[1], self.resolution[0], 3), dtype=np.uint8)
+        
+        while True:
+            frame = stats_frame.copy()
+            
+            # Título principal
+            cv2.putText(frame, "FASE 2 COMPLETADA", 
+                       (self.resolution[0]//2 - 250, 60),
+                       cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 3)
+            
+            cv2.putText(frame, "Calibracion Estereo Exitosa", 
+                       (self.resolution[0]//2 - 220, 100),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+            
+            # Línea separadora
+            cv2.line(frame, (50, 130), (self.resolution[0]-50, 130), (100, 100, 100), 2)
+            
+            # Estadísticas principales
+            y_pos = 180
+            line_height = 50
+            
+            stats = [
+                ("Pares Capturados:", f"{pairs_count}", (0, 255, 255)),
+                ("Baseline:", f"{baseline_cm:.2f} cm", (255, 200, 0)),
+                ("Error RMS Estereo:", f"{rms_error:.6f}", (255, 150, 0)),
+                ("", "", None),  # Espacio
+                ("Error Camara Izquierda:", f"{self.calibrator_left.reprojection_error:.6f} px", (100, 255, 100)),
+                ("Error Camara Derecha:", f"{self.calibrator_right.reprojection_error:.6f} px", (100, 255, 100)),
+            ]
+            
+            for label, value, color in stats:
+                if color is None:  # Espacio en blanco
+                    y_pos += line_height // 2
+                    continue
+                
+                cv2.putText(frame, label, 
+                           (80, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200, 200, 200), 2)
+                
+                cv2.putText(frame, value, 
+                           (self.resolution[0]//2 + 50, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+                
+                y_pos += line_height
+            
+            # Indicador de calidad
+            y_quality = y_pos + 30
+            cv2.line(frame, (50, y_quality), (self.resolution[0]-50, y_quality), (100, 100, 100), 2)
+            
+            y_quality += 50
+            quality_label = "Calidad de Calibracion:"
+            if rms_error < 0.3:
+                quality_text = "EXCELENTE"
+                quality_color = (0, 255, 0)
+            elif rms_error < 0.6:
+                quality_text = "BUENA"
+                quality_color = (0, 255, 255)
+            elif rms_error < 1.0:
+                quality_text = "ACEPTABLE"
+                quality_color = (0, 200, 255)
+            else:
+                quality_text = "MEJORABLE"
+                quality_color = (0, 165, 255)
+            
+            cv2.putText(frame, quality_label, 
+                       (80, y_quality),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200, 200, 200), 2)
+            
+            cv2.putText(frame, quality_text, 
+                       (self.resolution[0]//2 + 50, y_quality),
+                       cv2.FONT_HERSHEY_SIMPLEX, 1.0, quality_color, 3)
+            
+            # Instrucciones finales
+            y_instructions = self.resolution[1] - 80
+            cv2.rectangle(frame, (40, y_instructions - 20), 
+                         (self.resolution[0] - 40, y_instructions + 60), 
+                         (50, 50, 50), -1)
+            cv2.rectangle(frame, (40, y_instructions - 20), 
+                         (self.resolution[0] - 40, y_instructions + 60), 
+                         (0, 255, 0), 2)
+            
+            cv2.putText(frame, "Presiona [ENTER] para continuar", 
+                       (self.resolution[0]//2 - 250, y_instructions + 20),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+            
+            cv2.imshow(window_name, frame)
+            
+            key = cv2.waitKey(1) & 0xFF
+            if key == 13:  # ENTER
+                break
+        
+        cv2.destroyWindow(window_name)
+        print("\n✓ Continuando...\n")
     
     def _compile_calibration_data(self):
         """Recopila todos los datos de calibración en un diccionario"""

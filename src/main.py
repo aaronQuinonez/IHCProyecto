@@ -135,202 +135,6 @@ def show_calibration_menu(ui_helper, pixel_width, pixel_height):
             cv2.destroyWindow(window_name)
             return None  # Salir
 
-def run_stereo_calibration_only(config, pixel_width, pixel_height):
-    """
-    Ejecuta SOLO la Fase 2 (calibración estéreo) usando calibración individual existente
-    """
-    from src.calibration import CalibrationManager
-    from src.calibration.calibration_config import CalibrationConfig
-    from src.calibration.camera_calibrator import CameraCalibrator
-    from src.calibration.stereo_calibrator import StereoCalibrator
-    import json
-    
-    try:
-        # Cargar calibración existente
-        with open(CalibrationConfig.CALIBRATION_FILE, 'r') as f:
-            calib_data = json.load(f)
-        
-        # Recrear calibradores con datos existentes
-        board_config = calib_data['board_config']
-        board_size = (board_config['cols'], board_config['rows'])
-        square_size = board_config['square_size_mm']
-        
-        # Calibrador izquierdo
-        calibrator_left = CameraCalibrator(
-            camera_id=config.LEFT_CAMERA_SOURCE,
-            camera_name='left',
-            board_size=board_size,
-            square_size_mm=square_size
-        )
-        calibrator_left.camera_matrix = np.array(calib_data['left_camera']['camera_matrix'])
-        calibrator_left.distortion_coeffs = np.array(calib_data['left_camera']['distortion_coeffs'])
-        calibrator_left.reprojection_error = calib_data['left_camera']['reprojection_error']
-        calibrator_left.is_calibrated = True
-        
-        # Calibrador derecho
-        calibrator_right = CameraCalibrator(
-            camera_id=config.RIGHT_CAMERA_SOURCE,
-            camera_name='right',
-            board_size=board_size,
-            square_size_mm=square_size
-        )
-        calibrator_right.camera_matrix = np.array(calib_data['right_camera']['camera_matrix'])
-        calibrator_right.distortion_coeffs = np.array(calib_data['right_camera']['distortion_coeffs'])
-        calibrator_right.reprojection_error = calib_data['right_camera']['reprojection_error']
-        calibrator_right.is_calibrated = True
-        
-        # Crear calibrador estéreo
-        stereo_calibrator = StereoCalibrator(calibrator_left, calibrator_right)
-        
-        # Ejecutar solo captura y calibración estéreo
-        MIN_PAIRS = 8
-        MAX_PAIRS = 15
-        
-        # Abrir ambas cámaras
-        cap_left = cv2.VideoCapture(config.LEFT_CAMERA_SOURCE)
-        cap_right = cv2.VideoCapture(config.RIGHT_CAMERA_SOURCE)
-        
-        if not cap_left.isOpened() or not cap_right.isOpened():
-            print("✗ Error al abrir las cámaras")
-            return False
-        
-        for cap in [cap_left, cap_right]:
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, pixel_width)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, pixel_height)
-        
-        print(f"\n{'='*70}")
-        print(f"FASE 2: CALIBRACIÓN ESTÉREO")
-        print(f"{'='*70}")
-        print(f"Capturando {MIN_PAIRS}-{MAX_PAIRS} pares simultáneos...")
-        print(f"Instrucciones:")
-        print(f"  - Coloca el tablero frente a AMBAS cámaras")
-        print(f"  - Presiona ESPACIO cuando detecte en ambas")
-        print(f"  - Presiona ESC cuando tengas suficientes pares")
-        print(f"{'='*70}\n")
-        
-        last_capture_time = 0
-        detection_frames = 0
-        STABILITY_FRAMES = 5
-        
-        window_name = "Calibracion Estereo - Fase 2"
-        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(window_name, pixel_width * 2, pixel_height)
-        
-        while True:
-            ret_left, frame_left = cap_left.read()
-            ret_right, frame_right = cap_right.read()
-            
-            if not ret_left or not ret_right:
-                print("✗ Error al leer frames")
-                break
-            
-            detected_both, corners_left, corners_right, display_left, display_right = \
-                stereo_calibrator.detect_chessboard_pair(frame_left, frame_right)
-            
-            if detected_both:
-                detection_frames += 1
-            else:
-                detection_frames = 0
-            
-            pairs_count = stereo_calibrator.get_pair_count()
-            progress = min(100, int((pairs_count / MIN_PAIRS) * 100))
-            current_time = cv2.getTickCount() / cv2.getTickFrequency()
-            can_capture = (current_time - last_capture_time) > 1.0
-            
-            for frame, label in [(display_left, "Izquierda"), (display_right, "Derecha")]:
-                cv2.putText(frame, f"FASE 2: CALIBRACION ESTEREO - {label}",
-                           (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-                
-                color = (0, 255, 0) if pairs_count >= MIN_PAIRS else (0, 165, 255)
-                cv2.putText(frame, f"Pares: {pairs_count}/{MIN_PAIRS}",
-                           (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
-                
-                bar_width = frame.shape[1] - 20
-                cv2.rectangle(frame, (10, 90), (10 + bar_width, 110), (60, 60, 60), -1)
-                cv2.rectangle(frame, (10, 90), (10 + int(bar_width * progress / 100), 110), color, -1)
-                
-                if detected_both:
-                    if detection_frames >= STABILITY_FRAMES:
-                        status = "LISTO PARA CAPTURAR" if can_capture else "Espere..."
-                        status_color = (0, 255, 0) if can_capture else (0, 165, 255)
-                    else:
-                        status = f"Estabilizando... {detection_frames}/{STABILITY_FRAMES}"
-                        status_color = (0, 255, 255)
-                else:
-                    status = "Buscando tablero en ambas camaras..."
-                    status_color = (0, 0, 255)
-                
-                cv2.putText(frame, status, (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, status_color, 2)
-                
-                if pairs_count >= MIN_PAIRS:
-                    cv2.putText(frame, "ESC = Finalizar | ESPACIO = Mas capturas",
-                               (10, frame.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-                else:
-                    cv2.putText(frame, "ESPACIO = Capturar par | ESC = Cancelar",
-                               (10, frame.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            
-            combined = np.hstack([display_left, display_right])
-            cv2.imshow(window_name, combined)
-            
-            key = cv2.waitKey(1) & 0xFF
-            
-            if key == 27:  # ESC
-                if pairs_count >= MIN_PAIRS:
-                    print(f"\n✓ Captura finalizada con {pairs_count} pares")
-                    break
-                else:
-                    print(f"\n✗ Cancelado. Se necesitan al menos {MIN_PAIRS} pares")
-                    cap_left.release()
-                    cap_right.release()
-                    cv2.destroyWindow(window_name)
-                    return False
-            
-            elif key == ord(' '):
-                if detected_both and detection_frames >= STABILITY_FRAMES and can_capture:
-                    if pairs_count < MAX_PAIRS:
-                        stereo_calibrator.capture_stereo_pair(
-                            frame_left, frame_right, corners_left, corners_right
-                        )
-                        print(f"✓ Par {pairs_count + 1} capturado")
-                        last_capture_time = current_time
-                        detection_frames = 0
-                    else:
-                        print(f"⚠️  Máximo de {MAX_PAIRS} pares alcanzado")
-        
-        cap_left.release()
-        cap_right.release()
-        cv2.destroyWindow(window_name)
-        
-        # Ejecutar calibración estéreo
-        print("\n⏳ Procesando calibración estéreo...")
-        stereo_result = stereo_calibrator.calibrate_stereo_pair()
-        
-        if stereo_result is None:
-            print("✗ Error en calibración estéreo")
-            return False
-        
-        # Calcular rectificación
-        print("⏳ Calculando parámetros de rectificación...")
-        stereo_calibrator.compute_rectification()
-        
-        # Actualizar archivo JSON con datos estéreo
-        calib_data['version'] = '2.0'
-        calib_data['stereo'] = stereo_calibrator.get_calibration_data()
-        
-        with open(CalibrationConfig.CALIBRATION_FILE, 'w') as f:
-            json.dump(calib_data, f, indent=4)
-        
-        print(f"\n✓ Calibración estéreo completada y guardada")
-        print(f"  Baseline: {stereo_result['baseline_cm']:.2f} cm")
-        print(f"  Error RMS: {stereo_result['rms_error']:.6f}")
-        
-        return True
-        
-    except Exception as e:
-        print(f"✗ Error en calibración estéreo: {e}")
-        traceback.print_exc()
-        return False
-
 def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
     """Ejecuta el proceso de calibración con el nuevo sistema profesional"""
     from src.calibration.calibration_config import CalibrationConfig
@@ -340,69 +144,497 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
         has_phase1 = False
         has_phase2 = False
         summary = None
+        force_recalibration = False  # Flag para forzar re-calibración
+        recalibrate_phase2_only = False  # Flag para re-calibrar solo Fase 2
         
         if CalibrationConfig.calibration_exists():
             summary = CalibrationConfig.get_calibration_summary()
             has_phase1 = summary is not None
             has_phase2 = summary.get('tiene_estereo', False) if summary else False
+            
+            # Debug: Mostrar datos de Fase 2
+            if has_phase2 and summary:
+                print("\n[DEBUG] Datos Fase 2 detectados:")
+                print(f"  - Baseline: {summary.get('baseline_cm', 'N/A')}")
+                print(f"  - Error RMS: {summary.get('error_stereo', 'N/A')}")
+                print(f"  - Pares: {summary.get('pares_stereo', 'N/A')}")
         
         # ========== CASO 1: AMBAS FASES COMPLETAS ==========
-        if has_phase1 and has_phase2:
-            # Mostrar resumen y preguntar si quiere usar existente o re-calibrar
-            window_name = 'Calibracion Completa'
-            cv2.namedWindow(window_name)
-            cv2.moveWindow(window_name, pixel_width//4, pixel_height//4)
+        if has_phase1 and has_phase2 and not force_recalibration:
+            # Mostrar interfaz detallada de calibración completa
+            window_name = 'Calibracion Completa - Detalles'
+            cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(window_name, 950, 700)
+            cv2.moveWindow(window_name, 100, 50)
             
-            info_frame = np.zeros((pixel_height, pixel_width, 3), dtype=np.uint8)
+            info_frame = np.zeros((700, 950, 3), dtype=np.uint8)
             
             while True:
                 display_frame = info_frame.copy()
                 
-                # Título
-                cv2.putText(display_frame, "CALIBRACION COMPLETA ENCONTRADA", 
-                           (pixel_width//2 - 300, 60),
-                           cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 255, 0), 3)
+                # ============ ENCABEZADO ============
+                cv2.rectangle(display_frame, (0, 0), (950, 100), (40, 80, 40), -1)
+                cv2.rectangle(display_frame, (0, 0), (950, 100), (0, 255, 0), 3)
                 
-                # Información resumida
-                y_pos = 130
-                line_spacing = 40
+                cv2.putText(display_frame, "CALIBRACION COMPLETA", 
+                           (250, 45),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 3)
                 
-                info_lines = [
-                    f"Fecha: {summary['fecha']}",
-                    f"",
-                    f"Fase 1 - Camaras Individuales: COMPLETA",
-                    f"  Izquierda: {summary['error_left']:.4f} px ({summary['imagenes_left']} imgs)" if isinstance(summary['error_left'], float) else f"  Izquierda: OK",
-                    f"  Derecha: {summary['error_right']:.4f} px ({summary['imagenes_right']} imgs)" if isinstance(summary['error_right'], float) else f"  Derecha: OK",
-                    f"",
-                    f"Fase 2 - Calibracion Estereo: COMPLETA",
-                    f"  Baseline: {summary['baseline_cm']:.2f} cm" if isinstance(summary.get('baseline_cm'), (int, float)) else f"  Baseline: OK",
-                    f"  Error RMS: {summary['error_stereo']:.4f}" if isinstance(summary.get('error_stereo'), float) else f"  Error: OK",
-                ]
+                cv2.putText(display_frame, f"Fecha: {summary['fecha']}    Version: {summary.get('version', '2.0')}", 
+                           (180, 75),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 255, 200), 1)
                 
-                for i, line in enumerate(info_lines):
-                    color = (100, 255, 100) if "COMPLETA" in line else (200, 200, 200)
-                    cv2.putText(display_frame, line, 
-                               (50, y_pos + i * line_spacing),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2 if "COMPLETA" in line else 1)
+                # ============ SECCIÓN FASE 1 ============
+                y_pos = 120
+                cv2.putText(display_frame, "FASE 1: CALIBRACION INDIVIDUAL", 
+                           (20, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (100, 255, 255), 2)
                 
-                # Opciones
-                y_options = y_pos + len(info_lines) * line_spacing + 50
-                cv2.rectangle(display_frame, (40, y_options - 10), 
-                             (pixel_width - 40, y_options + 120), (50, 50, 50), -1)
-                cv2.rectangle(display_frame, (40, y_options - 10), 
-                             (pixel_width - 40, y_options + 120), (0, 255, 0), 2)
+                y_pos += 5
+                cv2.line(display_frame, (20, y_pos), (930, y_pos), (100, 100, 100), 2)
                 
-                cv2.putText(display_frame, "[ENTER] Usar calibracion y arrancar juego", 
-                           (60, y_options + 25),
+                # Cámara Izquierda
+                y_pos += 30
+                cv2.putText(display_frame, "Camara IZQUIERDA:", 
+                           (40, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.65, (150, 200, 255), 2)
+                
+                if isinstance(summary['error_left'], float):
+                    cv2.putText(display_frame, f"Error: {summary['error_left']:.6f} px", 
+                               (300, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+                    
+                    cv2.putText(display_frame, f"Imgs: {summary['imagenes_left']}", 
+                               (600, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+                    
+                    quality_color = (0, 255, 0) if summary['error_left'] < 0.5 else (0, 255, 255) if summary['error_left'] < 1.0 else (0, 200, 255)
+                    cv2.circle(display_frame, (750, y_pos-7), 7, quality_color, -1)
+                
+                # Cámara Derecha
+                y_pos += 30
+                cv2.putText(display_frame, "Camara DERECHA:", 
+                           (40, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.65, (150, 200, 255), 2)
+                
+                if isinstance(summary['error_right'], float):
+                    cv2.putText(display_frame, f"Error: {summary['error_right']:.6f} px", 
+                               (300, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+                    
+                    cv2.putText(display_frame, f"Imgs: {summary['imagenes_right']}", 
+                               (600, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+                    
+                    quality_color = (0, 255, 0) if summary['error_right'] < 0.5 else (0, 255, 255) if summary['error_right'] < 1.0 else (0, 200, 255)
+                    cv2.circle(display_frame, (750, y_pos-7), 7, quality_color, -1)
+                
+                # ============ SECCIÓN FASE 2 ============
+                y_pos += 45
+                cv2.putText(display_frame, "FASE 2: CALIBRACION ESTEREO", 
+                           (20, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 200, 100), 2)
+                
+                y_pos += 5
+                cv2.line(display_frame, (20, y_pos), (930, y_pos), (100, 100, 100), 2)
+                
+                # Baseline
+                y_pos += 30
+                cv2.putText(display_frame, "Baseline (distancia camaras):", 
+                           (40, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.65, (150, 200, 255), 2)
+                
+                baseline_val = summary.get('baseline_cm', 'N/A')
+                if baseline_val != 'N/A' and baseline_val is not None:
+                    try:
+                        baseline_float = float(baseline_val)
+                        cv2.putText(display_frame, f"{baseline_float:.2f} cm", 
+                                   (450, y_pos),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 255, 255), 2)
+                    except:
+                        cv2.putText(display_frame, str(baseline_val), 
+                                   (450, y_pos),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 255, 255), 2)
+                else:
+                    cv2.putText(display_frame, "N/A", 
+                               (450, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2)
+                
+                # Error RMS
+                y_pos += 30
+                cv2.putText(display_frame, "Error RMS:", 
+                           (40, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.65, (150, 200, 255), 2)
+                
+                error_stereo_val = summary.get('error_stereo', 'N/A')
+                if error_stereo_val != 'N/A' and error_stereo_val is not None:
+                    try:
+                        error_float = float(error_stereo_val)
+                        cv2.putText(display_frame, f"{error_float:.4f}", 
+                                   (450, y_pos),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+                        
+                        # Indicador de calidad
+                        if error_float < 0.3:
+                            quality_text = "EXCELENTE"
+                            quality_color = (0, 255, 0)
+                        elif error_float < 0.6:
+                            quality_text = "BUENA"
+                            quality_color = (0, 255, 255)
+                        elif error_float < 1.0:
+                            quality_text = "ACEPTABLE"
+                            quality_color = (0, 200, 255)
+                        else:
+                            quality_text = "MEJORABLE"
+                            quality_color = (0, 165, 255)
+                        
+                        cv2.putText(display_frame, quality_text, 
+                                   (650, y_pos),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, quality_color, 2)
+                    except:
+                        cv2.putText(display_frame, str(error_stereo_val), 
+                                   (450, y_pos),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+                else:
+                    cv2.putText(display_frame, "N/A", 
+                               (450, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2)
+                
+                # Pares capturados
+                y_pos += 30
+                cv2.putText(display_frame, "Pares capturados:", 
+                           (40, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.65, (150, 200, 255), 2)
+                
+                pares_val = summary.get('pares_stereo', 'N/A')
+                if pares_val != 'N/A' and pares_val is not None:
+                    cv2.putText(display_frame, f"{pares_val}", 
+                               (450, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+                else:
+                    cv2.putText(display_frame, "N/A", 
+                               (450, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2)
+                
+                # ============ CONFIGURACIÓN TABLERO ============
+                y_pos += 45
+                cv2.putText(display_frame, "CONFIGURACION TABLERO", 
+                           (20, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 100), 2)
+                
+                y_pos += 5
+                cv2.line(display_frame, (20, y_pos), (930, y_pos), (100, 100, 100), 2)
+                
+                y_pos += 30
+                cv2.putText(display_frame, f"Tablero: {summary.get('tablero', 'N/A')}", 
+                           (40, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+                
+                cv2.putText(display_frame, f"Cuadrado: {summary.get('square_size', 'N/A')} mm", 
+                           (300, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+                
+                # ============ MENSAJE IMPORTANTE ============
+                y_pos += 50
+                cv2.rectangle(display_frame, (15, y_pos - 10), (935, y_pos + 75), (60, 60, 60), -1)
+                cv2.rectangle(display_frame, (15, y_pos - 10), (935, y_pos + 75), (100, 255, 100), 3)
+                
+                cv2.putText(display_frame, "ESTA CALIBRACION ES VALIDA PARA:", 
+                           (220, y_pos + 15),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 100), 2)
+                
+                cv2.putText(display_frame, "- La misma ubicacion fisica de las camaras", 
+                           (150, y_pos + 45),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 1)
+                
+                cv2.putText(display_frame, "- Si moviste las camaras, RE-CALIBRA", 
+                           (150, y_pos + 68),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 200, 100), 1)
+                
+                # ============ OPCIONES ============
+                y_pos += 100
+                cv2.line(display_frame, (15, y_pos), (935, y_pos), (100, 255, 100), 2)
+                
+                y_pos += 30
+                cv2.putText(display_frame, "[ENTER] Usar esta calibracion y arrancar juego", 
+                           (180, y_pos),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 
-                cv2.putText(display_frame, "[R] Re-calibrar todo desde cero", 
-                           (60, y_options + 65),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 1)
+                y_pos += 35
+                cv2.putText(display_frame, "[S] Re-calibrar SOLO Fase 2 (mejorar baseline/error)", 
+                           (130, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 1)
                 
-                cv2.putText(display_frame, "[ESC] Volver al menu", 
-                           (60, y_options + 100),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (100, 100, 255), 1)
+                y_pos += 35
+                cv2.putText(display_frame, "[R] Re-calibrar TODO (Fase 1 + Fase 2)", 
+                           (190, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 255), 1)
+                
+                y_pos += 30
+                cv2.putText(display_frame, "[ESC] Volver al menu principal", 
+                           (260, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.55, (150, 150, 255), 1)
+                
+                cv2.imshow(window_name, display_frame)
+                
+                key = cv2.waitKey(1) & 0xFF
+                
+                if key == 13:  # ENTER - Usar existente y arrancar
+                    cv2.destroyWindow(window_name)
+                    print("\n✓ Usando calibración existente - Iniciando juego...")
+                    return True
+                
+                elif key == ord('s') or key == ord('S'):  # Re-calibrar SOLO Fase 2
+                    cv2.destroyWindow(window_name)
+                    print("\n⚡ Re-calibrando SOLO FASE 2...")
+                    print("  (Manteniendo calibración de Fase 1 existente)")
+                    
+                    # IMPORTANTE: Eliminar stereo del JSON ANTES de salir
+                    import json
+                    try:
+                        with open(CalibrationConfig.CALIBRATION_FILE, 'r') as f:
+                            calib_data = json.load(f)
+                        
+                        # Eliminar solo sección stereo
+                        calib_data['stereo'] = None
+                        
+                        # Guardar JSON modificado
+                        with open(CalibrationConfig.CALIBRATION_FILE, 'w') as f:
+                            json.dump(calib_data, f, indent=4)
+                        
+                        print("✓ Preparando re-calibración de Fase 2...\n")
+                    except Exception as e:
+                        print(f"⚠ Error al modificar calibración: {e}")
+                    
+                    # Actualizar variables de estado
+                    force_recalibration = True
+                    recalibrate_phase2_only = True
+                    has_phase2 = False  # ← CRUCIAL: Marcar que NO hay Fase 2
+                    break  # Salir del while para continuar con calibración
+                
+                elif key == ord('r') or key == ord('R'):  # Re-calibrar TODO
+                    cv2.destroyWindow(window_name)
+                    print("\n⚠ Iniciando RE-CALIBRACIÓN COMPLETA...")
+                    print("  (Fase 1 + Fase 2 desde cero)")
+                    force_recalibration = True
+                    recalibrate_phase2_only = False
+                    break  # Salir del while para continuar con calibración
+                
+                elif key == 27:  # ESC
+                    cv2.destroyWindow(window_name)
+                    return False
+        
+        # ========== EJECUTAR CALIBRACIÓN SI ES NECESARIO ==========
+        # Solo si: no hay fase 1, no hay fase 2, o se forzó re-calibración
+        if not has_phase1 or not has_phase2 or force_recalibration:
+            # Mostrar interfaz detallada de calibración completa
+            window_name = 'Calibracion Completa - Detalles'
+            cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(window_name, 950, 700)
+            cv2.moveWindow(window_name, 100, 50)
+            
+            info_frame = np.zeros((700, 950, 3), dtype=np.uint8)
+            
+            while True:
+                display_frame = info_frame.copy()
+                
+                # ============ ENCABEZADO ============
+                cv2.rectangle(display_frame, (0, 0), (950, 100), (40, 80, 40), -1)
+                cv2.rectangle(display_frame, (0, 0), (950, 100), (0, 255, 0), 3)
+                
+                cv2.putText(display_frame, "CALIBRACION COMPLETA", 
+                           (250, 45),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 3)
+                
+                cv2.putText(display_frame, f"Fecha: {summary['fecha']}    Version: {summary.get('version', '2.0')}", 
+                           (180, 75),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 255, 200), 1)
+                
+                # ============ SECCIÓN FASE 1 ============
+                y_pos = 120
+                cv2.putText(display_frame, "FASE 1: CALIBRACION INDIVIDUAL", 
+                           (20, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (100, 255, 255), 2)
+                
+                y_pos += 5
+                cv2.line(display_frame, (20, y_pos), (930, y_pos), (100, 100, 100), 2)
+                
+                # Cámara Izquierda
+                y_pos += 30
+                cv2.putText(display_frame, "Camara IZQUIERDA:", 
+                           (40, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.65, (150, 200, 255), 2)
+                
+                if isinstance(summary['error_left'], float):
+                    cv2.putText(display_frame, f"Error: {summary['error_left']:.6f} px", 
+                               (300, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+                    
+                    cv2.putText(display_frame, f"Imgs: {summary['imagenes_left']}", 
+                               (600, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+                    
+                    quality_color = (0, 255, 0) if summary['error_left'] < 0.5 else (0, 255, 255) if summary['error_left'] < 1.0 else (0, 200, 255)
+                    cv2.circle(display_frame, (750, y_pos-7), 7, quality_color, -1)
+                
+                # Cámara Derecha
+                y_pos += 30
+                cv2.putText(display_frame, "Camara DERECHA:", 
+                           (40, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.65, (150, 200, 255), 2)
+                
+                if isinstance(summary['error_right'], float):
+                    cv2.putText(display_frame, f"Error: {summary['error_right']:.6f} px", 
+                               (300, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+                    
+                    cv2.putText(display_frame, f"Imgs: {summary['imagenes_right']}", 
+                               (600, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+                    
+                    quality_color = (0, 255, 0) if summary['error_right'] < 0.5 else (0, 255, 255) if summary['error_right'] < 1.0 else (0, 200, 255)
+                    cv2.circle(display_frame, (750, y_pos-7), 7, quality_color, -1)
+                
+                # ============ SECCIÓN FASE 2 ============
+                y_pos += 45
+                cv2.putText(display_frame, "FASE 2: CALIBRACION ESTEREO", 
+                           (20, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 200, 100), 2)
+                
+                y_pos += 5
+                cv2.line(display_frame, (20, y_pos), (930, y_pos), (100, 100, 100), 2)
+                
+                # Baseline
+                y_pos += 30
+                cv2.putText(display_frame, "Baseline (distancia camaras):", 
+                           (40, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.65, (150, 200, 255), 2)
+                
+                baseline_val = summary.get('baseline_cm', 'N/A')
+                if baseline_val != 'N/A' and baseline_val is not None:
+                    try:
+                        baseline_float = float(baseline_val)
+                        cv2.putText(display_frame, f"{baseline_float:.2f} cm", 
+                                   (450, y_pos),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 255, 255), 2)
+                    except:
+                        cv2.putText(display_frame, str(baseline_val), 
+                                   (450, y_pos),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 255, 255), 2)
+                else:
+                    cv2.putText(display_frame, "N/A", 
+                               (450, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2)
+                
+                # Error RMS
+                y_pos += 30
+                cv2.putText(display_frame, "Error RMS:", 
+                           (40, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.65, (150, 200, 255), 2)
+                
+                error_stereo_val = summary.get('error_stereo', 'N/A')
+                if error_stereo_val != 'N/A' and error_stereo_val is not None:
+                    try:
+                        error_float = float(error_stereo_val)
+                        cv2.putText(display_frame, f"{error_float:.4f}", 
+                                   (450, y_pos),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+                        
+                        # Indicador de calidad
+                        if error_float < 0.3:
+                            quality_text = "EXCELENTE"
+                            quality_color = (0, 255, 0)
+                        elif error_float < 0.6:
+                            quality_text = "BUENA"
+                            quality_color = (0, 255, 255)
+                        elif error_float < 1.0:
+                            quality_text = "ACEPTABLE"
+                            quality_color = (0, 200, 255)
+                        else:
+                            quality_text = "MEJORABLE"
+                            quality_color = (0, 165, 255)
+                        
+                        cv2.putText(display_frame, quality_text, 
+                                   (650, y_pos),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, quality_color, 2)
+                    except:
+                        cv2.putText(display_frame, str(error_stereo_val), 
+                                   (450, y_pos),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+                else:
+                    cv2.putText(display_frame, "N/A", 
+                               (450, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2)
+                
+                # Pares capturados
+                y_pos += 30
+                cv2.putText(display_frame, "Pares capturados:", 
+                           (40, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.65, (150, 200, 255), 2)
+                
+                pares_val = summary.get('pares_stereo', 'N/A')
+                if pares_val != 'N/A' and pares_val is not None:
+                    cv2.putText(display_frame, f"{pares_val}", 
+                               (450, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
+                else:
+                    cv2.putText(display_frame, "N/A", 
+                               (450, y_pos),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2)
+                
+                # ============ CONFIGURACIÓN TABLERO ============
+                y_pos += 45
+                cv2.putText(display_frame, "CONFIGURACION TABLERO", 
+                           (20, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 100), 2)
+                
+                y_pos += 5
+                cv2.line(display_frame, (20, y_pos), (930, y_pos), (100, 100, 100), 2)
+                
+                y_pos += 30
+                cv2.putText(display_frame, f"Tablero: {summary.get('tablero', 'N/A')}", 
+                           (40, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+                
+                cv2.putText(display_frame, f"Cuadrado: {summary.get('square_size', 'N/A')} mm", 
+                           (300, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+                
+                # ============ MENSAJE IMPORTANTE ============
+                y_pos += 50
+                cv2.rectangle(display_frame, (15, y_pos - 10), (935, y_pos + 75), (60, 60, 60), -1)
+                cv2.rectangle(display_frame, (15, y_pos - 10), (935, y_pos + 75), (100, 255, 100), 3)
+                
+                cv2.putText(display_frame, "ESTA CALIBRACION ES VALIDA PARA:", 
+                           (220, y_pos + 15),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 100), 2)
+                
+                cv2.putText(display_frame, "- La misma ubicacion fisica de las camaras", 
+                           (150, y_pos + 45),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 200), 1)
+                
+                cv2.putText(display_frame, "- Si moviste las camaras, RE-CALIBRA", 
+                           (150, y_pos + 68),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 200, 100), 1)
+                
+                # ============ OPCIONES ============
+                y_pos += 100
+                cv2.line(display_frame, (15, y_pos), (935, y_pos), (100, 255, 100), 2)
+                
+                y_pos += 30
+                cv2.putText(display_frame, "[ENTER] Usar esta calibracion y arrancar juego", 
+                           (180, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                
+                y_pos += 35
+                cv2.putText(display_frame, "[R] Re-calibrar (camaras movidas o nueva ubicacion)", 
+                           (150, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 255), 1)
+                
+                y_pos += 30
+                cv2.putText(display_frame, "[ESC] Volver al menu principal", 
+                           (260, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.55, (150, 150, 255), 1)
                 
                 cv2.imshow(window_name, display_frame)
                 
@@ -416,50 +648,89 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
                 elif key == ord('r') or key == ord('R'):  # Re-calibrar
                     cv2.destroyWindow(window_name)
                     print("\n⚠ Iniciando RE-CALIBRACIÓN completa...")
+                    print("  (Las cámaras pueden haber sido movidas de su posición original)")
                     break  # Continuar con calibración
                 
                 elif key == 27:  # ESC
                     cv2.destroyWindow(window_name)
                     return False
-        
-        # ========== CASO 2: SOLO FASE 1 COMPLETA, FALTA FASE 2 ==========
-        elif has_phase1 and not has_phase2:
-            print("\n" + "="*70)
-            print("✓ FASE 1 COMPLETA - Saltando a Fase 2")
-            print("="*70)
-            print(f"  Izquierda: {summary['error_left']:.4f} px" if isinstance(summary['error_left'], float) else "  Izquierda: OK")
-            print(f"  Derecha: {summary['error_right']:.4f} px" if isinstance(summary['error_right'], float) else "  Derecha: OK")
-            print("\n⚡ Iniciando Fase 2 directamente...")
-            print("="*70 + "\n")
-        
-        # ========== CASO 3: NADA COMPLETO O RE-CALIBRACIÓN SOLICITADA ==========
-        else:
-            print("\n" + "="*70)
-            print("INICIANDO CALIBRACIÓN COMPLETA (FASE 1 + FASE 2)")
-            print("="*70)
-        
-        # Importar el manager v2 que tiene ambas fases integradas
-        from src.calibration.calibration_manager_v2 import CalibrationManager
-        
-        # Crear gestor de calibración
-        calibration_manager = CalibrationManager(
-            cam_left_id=config.LEFT_CAMERA_SOURCE,
-            cam_right_id=config.RIGHT_CAMERA_SOURCE,
-            resolution=(pixel_width, pixel_height)
-        )
-        
-        # Ejecutar calibración (inteligente: salta fases ya completadas)
-        success = calibration_manager.run_full_calibration()
-        
-        if not success:
-            print("✗ Calibración fallida o cancelada")
-            return False
-        
-        print("\n" + "="*70)
-        print("✓ CALIBRACIÓN COMPLETA EXITOSA")
-        print("="*70)
-        
-        return True
+        # ========== EJECUTAR CALIBRACIÓN SI ES NECESARIO ==========
+        # Solo si: no hay fase 1, no hay fase 2, o se forzó re-calibración
+        if not has_phase1 or not has_phase2 or force_recalibration:
+            
+            # ========== CASO 2A: RE-CALIBRAR SOLO FASE 2 ==========
+            if recalibrate_phase2_only and has_phase1:
+                print("\n" + "="*70)
+                print("⚡ RE-CALIBRANDO SOLO FASE 2")
+                print("="*70)
+                print("✓ Fase 1 existente se mantendrá")
+                print(f"  Izquierda: {summary['error_left']:.4f} px" if isinstance(summary['error_left'], float) else "  Izquierda: OK")
+                print(f"  Derecha: {summary['error_right']:.4f} px" if isinstance(summary['error_right'], float) else "  Derecha: OK")
+                print("\n⚡ Iniciando SOLO captura de pares estéreo...")
+                print("💡 TIP: Captura 15 pares y mantén tablero INMÓVIL")
+                print("="*70 + "\n")
+                
+                from src.calibration.calibration_manager_v2 import CalibrationManager
+                
+                # Crear gestor (detectará automáticamente Fase 1 completa del JSON)
+                calibration_manager = CalibrationManager(
+                    cam_left_id=config.LEFT_CAMERA_SOURCE,
+                    cam_right_id=config.RIGHT_CAMERA_SOURCE,
+                    resolution=(pixel_width, pixel_height)
+                )
+                
+                # Ejecutar calibración (detectará Fase 1 completa y ejecutará SOLO Fase 2)
+                success = calibration_manager.run_full_calibration()
+                
+                if not success:
+                    print("✗ Re-calibración de Fase 2 fallida o cancelada")
+                    return False
+                
+                print("\n" + "="*70)
+                print("✓ FASE 2 RE-CALIBRADA EXITOSAMENTE")
+                print("="*70)
+                
+                return True
+            
+            # ========== CASO 2B: SOLO FASE 1 COMPLETA, FALTA FASE 2 ==========
+            elif has_phase1 and not has_phase2 and not force_recalibration:
+                print("\n" + "="*70)
+                print("✓ FASE 1 COMPLETA - Saltando a Fase 2")
+                print("="*70)
+                print(f"  Izquierda: {summary['error_left']:.4f} px" if isinstance(summary['error_left'], float) else "  Izquierda: OK")
+                print(f"  Derecha: {summary['error_right']:.4f} px" if isinstance(summary['error_right'], float) else "  Derecha: OK")
+                print("\n⚡ Iniciando Fase 2 directamente...")
+                print("="*70 + "\n")
+            
+            # ========== CASO 3: NADA COMPLETO O RE-CALIBRACIÓN COMPLETA SOLICITADA ==========
+            else:
+                print("\n" + "="*70)
+                print("INICIANDO CALIBRACIÓN COMPLETA (FASE 1 + FASE 2)")
+                print("="*70)
+            
+            # Importar el manager v2 (si no se hizo antes)
+            if not recalibrate_phase2_only:
+                from src.calibration.calibration_manager_v2 import CalibrationManager
+                
+                # Crear gestor de calibración
+                calibration_manager = CalibrationManager(
+                    cam_left_id=config.LEFT_CAMERA_SOURCE,
+                    cam_right_id=config.RIGHT_CAMERA_SOURCE,
+                    resolution=(pixel_width, pixel_height)
+                )
+                
+                # Ejecutar calibración (inteligente: salta fases ya completadas)
+                success = calibration_manager.run_full_calibration()
+                
+                if not success:
+                    print("✗ Calibración fallida o cancelada")
+                    return False
+                
+                print("\n" + "="*70)
+                print("✓ CALIBRACIÓN COMPLETA EXITOSA")
+                print("="*70)
+            
+            return True
         
     except Exception as e:
         print(f"✗ Error durante calibración: {e}")
