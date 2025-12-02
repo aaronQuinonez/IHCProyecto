@@ -69,7 +69,6 @@ import fluidsynth
 from src.vision import video_thread, angles
 from src.vision.hand_detector import HandDetector
 from src.vision import keyboard_mapper as kbm
-from src.vision.side_contact_detector import SideContactDetector
 from src.vision.stereo_config import StereoConfig
 
 # --- Piano ---
@@ -257,7 +256,6 @@ def main():
         # set up keyboards map
         # -----------------------------
         km = kbm.KeyboardMap(depth_threshold=config.DEPTH_THRESHOLD)
-        contact_detector = SideContactDetector(canvas_height=pixel_height)  # Mantenido para compatibilidad
 
         # ------------------------------
         # set up angles
@@ -367,13 +365,6 @@ def main():
 
                 hands_right_image, fingers_right_image = \
                     right_detector.getFingerTipsPos()
-            
-            # Detectar contacto con la mesa desde cámara lateral
-            if len(fingers_right_image) > 0:
-                contact_detector.detect_contact(fingers_right_image)
-                frame_right = contact_detector.draw_table_line(frame_right)
-            # else:
-            #     vk_right.draw_virtual_keyboard(frame_right)
 
             # check 1: motion in both frames:
             if (len(fingers_left_image) > 0 and len(fingers_right_image) > 0):
@@ -437,6 +428,11 @@ def main():
                         hit_result = rhythm_game.check_hit(k_pos)
                         if hit_result:
                             print(f"Tecla {k_pos}: {hit_result}")
+                            # Reproducir audio solo en modo juego
+                            fs.noteon(
+                                chan=0,
+                                key=vk_left.note_from_key(k_pos)+octave_base,
+                                vel=127*2//3)
                     
                     # Dibujar el juego de ritmo sobre el frame
                     frame_left = rhythm_game.draw(
@@ -445,26 +441,23 @@ def main():
                         vk_left.kb_x1,
                         vk_left.white_key_width
                     )
-                
-                if np.any(on_map):
-                    for k_pos, on_key in enumerate(on_map):
-                        # print('k_pos:{}   on_key:{}'.format(k_pos, on_key))
-                        if on_key:
-                            # kb.press(keyboard_map[k_pos])
-                            fs.noteon(
-                                chan=0,
-                                key=vk_left.note_from_key(k_pos)+octave_base,
-                                vel=127*2//3)
+                else:
+                    # Modo libre: reproducir audio en todas las teclas
+                    if np.any(on_map):
+                        for k_pos, on_key in enumerate(on_map):
+                            if on_key:
+                                fs.noteon(
+                                    chan=0,
+                                    key=vk_left.note_from_key(k_pos)+octave_base,
+                                    vel=127*2//3)
 
-                if np.any(off_map):
-                    for k_pos, off_key in enumerate(off_map):
-                        # print('k_pos:{}   off_key:{}'.format(k_pos, off_key))
-                        if off_key:
-                            # kb.release(keyboard_map[k_pos])
-                            fs.noteoff(
-                                chan=0,
-                                key=vk_left.note_from_key(k_pos)+octave_base
-                                )
+                    if np.any(off_map):
+                        for k_pos, off_key in enumerate(off_map):
+                            if off_key:
+                                fs.noteoff(
+                                    chan=0,
+                                    key=vk_left.note_from_key(k_pos)+octave_base
+                                    )
 
             # display camera centers
             angler.frame_add_crosshairs(frame_left)
@@ -566,6 +559,9 @@ def main():
                 print("¡Juego de ritmo iniciado! Presiona 'f' para volver al modo libre")
                 ui_helper.reset_instructions()  # Mostrar instrucciones del juego
             elif key == ord('f'):  # ========== NUEVA TECLA ==========
+                # Detener juego si está activo
+                if game_mode and rhythm_game.is_playing:
+                    rhythm_game.stop_game()
                 game_mode = False
                 print("Modo libre activado")
                 ui_helper.reset_instructions()  # Mostrar instrucciones del modo libre

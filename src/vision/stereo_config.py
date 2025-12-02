@@ -16,8 +16,8 @@ class StereoConfig:
     """Clase de configuración para el sistema estéreo"""
     
     # ==================== CÁMARAS ====================
-    LEFT_CAMERA_SOURCE = 1          # ID de cámara izquierda
-    RIGHT_CAMERA_SOURCE = 2         # ID de cámara derecha
+    LEFT_CAMERA_SOURCE = 2          # ID de cámara izquierda
+    RIGHT_CAMERA_SOURCE = 1         # ID de cámara derecha
     PIXEL_WIDTH = 640               # Ancho en píxeles
     PIXEL_HEIGHT = 480              # Alto en píxeles
     FRAME_RATE = 30                 # FPS objetivo
@@ -87,10 +87,6 @@ class StereoConfig:
     # ==================== AUDIO ====================
     NOTE_VELOCITY = 127 * 2 // 3    # Velocidad de notas MIDI (84)
     AUDIO_DRIVER = 'dsound'         # Driver de audio (Windows)
-    
-    # ==================== DETECCIÓN DE CONTACTO ====================
-    TABLE_Y_THRESHOLD_RATIO = 0.75  # Ratio de posición Y para detectar mesa (75% del alto)
-    CONTACT_TOLERANCE = 10          # Tolerancia en píxeles para detectar contacto
     
     # ==================== PROCESAMIENTO ====================
     QUEUE_LENGTH = 3                # Longitud de cola para estabilización
