@@ -60,6 +60,18 @@ src/theory/
   - `I`: Mostrar/ocultar construcción del acorde
   - `N/P`: Cambiar de acorde
 
+### 4. Ritmo y Tempo (Básico)
+- Duraciones de notas (redonda, blanca, negra, corchea, semicorchea)
+- Conceptos de tempo (BPM) y velocidad musical
+- Patrones rítmicos comunes
+- **Controles:**
+  - `1-5`: Seleccionar duración (1=Redonda, 5=Semicorchea)
+  - `ESPACIO`: Tocar nota con duración actual
+  - `M`: Activar/desactivar metrónomo visual
+  - `P`: Reproducir patrón rítmico completo
+  - `+/-`: Aumentar/disminuir tempo (BPM)
+  - `N`: Siguiente patrón rítmico
+
 ## Crear una nueva lección
 
 ### 1. Crea un archivo `lesson_tu_leccion.py` en `src/theory/lessons/`
