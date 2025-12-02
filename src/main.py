@@ -82,6 +82,9 @@ from src.gameplay.song_chart import TUTORIAL_FACIL
 # --- UI ---
 from src.ui.ui_helper import UIHelper
 
+# --- Theory ---
+from src.theory import get_lesson_manager, TheoryUI
+
 # --- Common ---
 from src.common.toolbox import round_half_up
 
@@ -251,6 +254,14 @@ def main():
         # Inicializar juego de ritmo
         rhythm_game = RhythmGame(num_keys=KEYBOARD_TOT_KEYS)
         game_mode = False  # False = modo libre, True = modo juego
+        
+        # Inicializar módulo de teoría
+        lesson_manager = get_lesson_manager()
+        theory_ui = TheoryUI(pixel_width * 2, pixel_height)
+        theory_mode = False  # False = otros modos, True = modo teoría
+        in_lesson = False  # True cuando está dentro de una lección
+        current_lesson = None
+        current_lesson_id = None
 
         # ------------------------------
         # set up keyboards map
@@ -466,6 +477,73 @@ def main():
             # Actualizar UI Helper
             ui_helper.update()
             
+            # === MODO TEORÍA ===
+            if theory_mode:
+                if in_lesson and current_lesson:
+                    # Ejecutar lección activa
+                    frame_left, frame_right, continue_lesson = current_lesson.run(
+                        frame_left, frame_right, vk_left, fs,
+                        left_detector, right_detector
+                    )
+                    
+                    if not continue_lesson:
+                        # Salir de la lección
+                        current_lesson.stop()
+                        in_lesson = False
+                        current_lesson = None
+                        print("Saliendo de la lección...")
+                else:
+                    # Mostrar menú de lecciones
+                    lessons = lesson_manager.get_all_lessons()
+                    if camera_in_front_of_you:
+                        h_frames = np.concatenate((frame_right, frame_left), axis=1)
+                    else:
+                        h_frames = np.concatenate((frame_left, frame_right), axis=1)
+                    
+                    h_frames = theory_ui.draw_lesson_menu(h_frames, lessons)
+                    cv2.imshow(main_window_name, h_frames)
+                    
+                    # Manejar teclas del menú
+                    key = cv2.waitKey(1) & 0xFF
+                    # Flecha arriba (múltiples códigos para compatibilidad)
+                    if key == 82 or key == ord('w') or key == ord('W'):  # Flecha arriba o W
+                        theory_ui.navigate_up(len(lessons))
+                        print(f"Navegando: lección {theory_ui.get_selected_index() + 1}/{len(lessons)}")
+                    # Flecha abajo
+                    elif key == 84 or key == ord('s') or key == ord('S'):  # Flecha abajo o S
+                        theory_ui.navigate_down(len(lessons))
+                        print(f"Navegando: lección {theory_ui.get_selected_index() + 1}/{len(lessons)}")
+                    # Números 1-9 para selección directa
+                    elif 49 <= key <= 57:  # Teclas 1-9
+                        selected_idx = key - 49  # Convertir a índice (0-8)
+                        if 0 <= selected_idx < len(lessons):
+                            lesson_id, lesson = lessons[selected_idx]
+                            current_lesson = lesson
+                            current_lesson_id = lesson_id
+                            current_lesson.start()
+                            in_lesson = True
+                            print(f"Iniciando lección: {lesson.name}")
+                    # ENTER
+                    elif key == 13:  # ENTER
+                        selected_idx = theory_ui.get_selected_index()
+                        if 0 <= selected_idx < len(lessons):
+                            lesson_id, lesson = lessons[selected_idx]
+                            current_lesson = lesson
+                            current_lesson_id = lesson_id
+                            current_lesson.start()
+                            in_lesson = True
+                            print(f"Iniciando lección: {lesson.name}")
+                    elif key == ord('q') or key == ord('Q'):
+                        theory_mode = False
+                        theory_ui.reset_selection()
+                        print("Saliendo del modo teoría...")
+                    elif key == 27:  # ESC
+                        theory_mode = False
+                        theory_ui.reset_selection()
+                    elif key != 255:  # Mostrar código de cualquier otra tecla para debug
+                        print(f"Tecla presionada en menú teoría: código {key}")
+                    continue  # Saltar el resto del loop principal
+            
             # Combinar frames antes de procesar UI
             if camera_in_front_of_you:
                 h_frames = np.concatenate((frame_right, frame_left), axis=1)
@@ -563,8 +641,16 @@ def main():
                 if game_mode and rhythm_game.is_playing:
                     rhythm_game.stop_game()
                 game_mode = False
+                theory_mode = False
                 print("Modo libre activado")
                 ui_helper.reset_instructions()  # Mostrar instrucciones del modo libre
+            elif key == ord('l'):  # ========== MODO TEORÍA ==========
+                theory_mode = True
+                game_mode = False
+                if rhythm_game.is_playing:
+                    rhythm_game.stop_game()
+                theory_ui.reset_selection()
+                print("¡Modo Teoría activado! Selecciona una lección. Presiona Q para salir.")
             elif key == ord('t'):  # Subir nivel de mesa (ESTÉREO: aumentar umbral de profundidad)
                 new_threshold = km.depth_threshold + 0.2
                 km.set_depth_threshold(new_threshold)
@@ -578,6 +664,14 @@ def main():
                     print(f"Profundidades detectadas (D - delta_y):")
                     for fid, depth in finger_depths_dict.items():
                         print(f"  Dedo {fid}: {depth:.2f} cm")
+            elif key == 27 and in_lesson:  # ESC dentro de lección
+                if current_lesson:
+                    current_lesson.stop()
+                in_lesson = False
+                current_lesson = None
+                print("Volviendo al menú de lecciones...")
+            elif in_lesson and current_lesson:  # Pasar teclas a la lección activa
+                current_lesson.handle_key(key, fs, octave_base)
             elif key != 255:
                 print('KEY PRESS:', [chr(key)])
 
