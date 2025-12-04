@@ -66,7 +66,7 @@ class ZonaSalidaAlgorithm(BaseAlgorithm):
             self.stats['total_exit_checks'] += 1
             
             # Calcular límites del teclado
-            keyboard_bottom = virtual_keyboard.y1
+            keyboard_bottom = virtual_keyboard.kb_y1
             exit_zone_start = keyboard_bottom - self.exit_zone_margin
             
             # Verificar si está en zona de salida

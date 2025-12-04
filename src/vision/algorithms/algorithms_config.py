@@ -50,7 +50,7 @@ ALGORITHMS_CONFIG = {
     # ALGORITMO 5: Filtrado espacial
     # Previene que dedos cercanos activen múltiples teclas adyacentes
     'Filtro Espacial': {
-        'enabled': True,  # ✓ Activar / ✗ Desactivar
+        'enabled': False,  # ✓ Activar / ✗ Desactivar
         'params': {
             'min_finger_distance': 35,      # Distancia mínima (px) entre dedos (25-50)
             'adjacent_keys_threshold': 2    # Máxima distancia (teclas) considerada adyacente (1-3)
