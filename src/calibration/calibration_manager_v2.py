@@ -828,7 +828,12 @@ class CalibrationManager:
         print("\n✓ Continuando...\n")
     
     def _compile_calibration_data(self):
-        """Recopila todos los datos de calibración en un diccionario"""
+        """
+        Recopila todos los datos de calibración en un diccionario
+        
+        ACTUALIZADO: Incluye transformaciones al mundo en cada cámara
+        para uso correcto en triangulación DLT
+        """
         print("[DEBUG] _compile_calibration_data() iniciado")
         print(f"[DEBUG] stereo_calibrator existe: {self.stereo_calibrator is not None}")
         
@@ -844,6 +849,25 @@ class CalibrationManager:
                 print(f"[DEBUG] stereo_data tiene {len(stereo_data)} campos")
                 print(f"[DEBUG] stereo_data keys: {list(stereo_data.keys())}")
         
+        # Obtener datos de cámaras individuales
+        left_camera_data = self.calibrator_left.get_calibration_data()
+        right_camera_data = self.calibrator_right.get_calibration_data()
+        
+        # NUEVO: Agregar transformaciones al mundo para DLT correcto
+        # Convención: Cámara izquierda = origen del mundo
+        if stereo_data and 'rotation_matrix' in stereo_data:
+            # Cámara izquierda como origen (R=I, T=0)
+            left_camera_data['world_rotation'] = [[1.0, 0.0, 0.0],
+                                                   [0.0, 1.0, 0.0],
+                                                   [0.0, 0.0, 1.0]]
+            left_camera_data['world_translation'] = [[0.0], [0.0], [0.0]]
+            
+            # Cámara derecha con transformación estéreo
+            right_camera_data['world_rotation'] = stereo_data['rotation_matrix']
+            right_camera_data['world_translation'] = stereo_data['translation_vector']
+            
+            print("[DEBUG] Transformaciones al mundo agregadas a cámaras individuales")
+        
         self.calibration_data = {
             'version': '2.0',
             'board_config': {
@@ -851,8 +875,8 @@ class CalibrationManager:
                 'rows': self.board_rows,
                 'square_size_mm': self.square_size_mm
             },
-            'left_camera': self.calibrator_left.get_calibration_data(),
-            'right_camera': self.calibrator_right.get_calibration_data(),
+            'left_camera': left_camera_data,
+            'right_camera': right_camera_data,
             'stereo': stereo_data,
             'camera_ids': {
                 'left': self.cam_left_id,
@@ -866,6 +890,10 @@ class CalibrationManager:
         
         # Verificación final
         print(f"[DEBUG] calibration_data['stereo'] es None: {self.calibration_data['stereo'] is None}")
+        if left_camera_data and 'world_rotation' in left_camera_data:
+            print("[DEBUG] ✓ world_rotation agregado a left_camera")
+        if right_camera_data and 'world_rotation' in right_camera_data:
+            print("[DEBUG] ✓ world_rotation agregado a right_camera")
     
     def _save_calibration(self):
         """Guarda los datos de calibración en formato JSON"""

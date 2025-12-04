@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import json
 from pathlib import Path
+from scipy import linalg
 
 
 class DepthEstimator:
@@ -36,6 +37,12 @@ class DepthEstimator:
         self.R = None
         self.T = None
         self.baseline_cm = None
+        
+        # NUEVO: Transformaciones al mundo (para DLT correcto)
+        self.R_world_left = None   # Rotación cámara izq respecto al mundo
+        self.T_world_left = None   # Traslación cámara izq respecto al mundo
+        self.R_world_right = None  # Rotación cámara der respecto al mundo
+        self.T_world_right = None  # Traslación cámara der respecto al mundo
         
         # Parámetros de rectificación
         self.R1 = None
@@ -105,6 +112,22 @@ class DepthEstimator:
         self.T = np.array(stereo['translation_vector'], dtype=np.float32)
         self.baseline_cm = stereo.get('baseline_cm', np.linalg.norm(self.T) * 100)
         
+        # NUEVO: Cargar transformaciones al mundo si están disponibles
+        # (Backward compatible: si no existen, usa convención por defecto)
+        if 'world_rotation' in left_cam and 'world_rotation' in right_cam:
+            self.R_world_left = np.array(left_cam['world_rotation'], dtype=np.float32)
+            self.T_world_left = np.array(left_cam['world_translation'], dtype=np.float32).reshape(3, 1)
+            self.R_world_right = np.array(right_cam['world_rotation'], dtype=np.float32)
+            self.T_world_right = np.array(right_cam['world_translation'], dtype=np.float32).reshape(3, 1)
+            print("  ✓ Transformaciones al mundo cargadas desde calibración")
+        else:
+            # Fallback: usar convención estándar (cam izq = origen)
+            self.R_world_left = np.eye(3, dtype=np.float32)
+            self.T_world_left = np.zeros((3, 1), dtype=np.float32)
+            self.R_world_right = self.R  # Rotación estéreo
+            self.T_world_right = self.T  # Traslación estéreo
+            print("  ⚠ Transformaciones al mundo no encontradas, usando convención por defecto")
+        
         # Cargar parámetros de rectificación
         rect = stereo['rectification']
         self.R1 = np.array(rect['R1'], dtype=np.float32)
@@ -171,9 +194,73 @@ class DepthEstimator:
         
         return img_left_rect, img_right_rect
     
-    def triangulate_point(self, point_left, point_right):
+    def _make_homogeneous_transform(self, R, t):
         """
-        Triangula un punto 3D desde coordenadas 2D en imágenes RECTIFICADAS
+        Convierte matriz de rotación R y vector de traslación t en matriz homogénea 4x4
+        
+        Args:
+            R: Matriz de rotación 3x3
+            t: Vector de traslación 3x1
+        
+        Returns:
+            P: Matriz homogénea 4x4
+        """
+        P = np.zeros((4, 4), dtype=np.float32)
+        P[:3, :3] = R
+        P[:3, 3] = t.reshape(3)
+        P[3, 3] = 1.0
+        return P
+    
+    def _get_projection_matrix(self, camera_matrix, R, T):
+        """
+        Construye matriz de proyección P = K @ [R | T]
+        
+        Args:
+            camera_matrix: Matriz intrínseca K (3x3)
+            R: Matriz de rotación (3x3)
+            T: Vector de traslación (3x1)
+        
+        Returns:
+            P: Matriz de proyección 3x4
+        """
+        RT = self._make_homogeneous_transform(R, T)[:3, :]
+        P = camera_matrix @ RT
+        return P
+    
+    def _get_projection_matrices_for_DLT(self):
+        """
+        Construye matrices de proyección CORRECTAS para DLT siguiendo el método
+        del repositorio StereoVision funcional.
+        
+        P = K @ [R | T] donde R y T son transformaciones respecto al mundo
+        
+        ACTUALIZADO: Usa transformaciones al mundo si están disponibles en calibración,
+        o usa convención por defecto (cam izquierda = origen).
+        
+        Convención:
+        - Cámara izquierda = origen del mundo: R0 = I, T0 = [0,0,0]
+        - Cámara derecha = transformación estéreo: R1 = R_stereo, T1 = T_stereo
+        
+        Returns:
+            tuple: (P0, P1) matrices de proyección 3x4 para cámara izquierda y derecha
+        """
+        # Usar transformaciones al mundo si están disponibles
+        # (cargadas desde calibration.json si existe el campo world_rotation)
+        RT0 = np.hstack([self.R_world_left, self.T_world_left])  # [R | T] matriz 3x4
+        P0 = self.K_left @ RT0      # K @ [R | T]
+        
+        RT1 = np.hstack([self.R_world_right, self.T_world_right])  # [R | T] matriz 3x4
+        P1 = self.K_right @ RT1     # K @ [R | T]
+        
+        return P0, P1
+    
+    def triangulate_point_DLT(self, point_left, point_right):
+        """
+        Triangula un punto 3D usando Direct Linear Transform (DLT)
+        Método más robusto que usa matrices de proyección directamente
+        
+        CORREGIDO: Ahora usa matrices K @ [R|T] con R y T respecto al mundo,
+        igual que el repositorio StereoVision funcional.
         
         Args:
             point_left: (x, y) en imagen izquierda rectificada
@@ -182,6 +269,67 @@ class DepthEstimator:
         Returns:
             tuple: (X, Y, Z) coordenadas 3D en cm, o None si falla
         """
+        # Obtener matrices de proyección CORRECTAS
+        # P0 = K_left @ [I | 0] (cámara izquierda como origen)
+        # P1 = K_right @ [R | T] (cámara derecha en el mundo)
+        P0, P1 = self._get_projection_matrices_for_DLT()
+        
+        # Construir sistema de ecuaciones A
+        x1, y1 = point_left
+        x2, y2 = point_right
+        
+        A = np.array([
+            y1 * P0[2, :] - P0[1, :],
+            P0[0, :] - x1 * P0[2, :],
+            y2 * P1[2, :] - P1[1, :],
+            P1[0, :] - x2 * P1[2, :]
+        ], dtype=np.float32)
+        
+        # Resolver usando SVD (Singular Value Decomposition)
+        # La solución es el vector singular correspondiente al menor valor singular
+        try:
+            B = A.T @ A
+            U, s, Vh = linalg.svd(B, full_matrices=False)
+            
+            # Punto 3D en coordenadas homogéneas
+            X_homogeneous = Vh[3, :]
+            
+            # Convertir a coordenadas cartesianas (dividir por W)
+            X = X_homogeneous[0] / X_homogeneous[3]
+            Y = X_homogeneous[1] / X_homogeneous[3]
+            Z = X_homogeneous[2] / X_homogeneous[3]
+            
+            # Validar que Z sea positivo (delante de la cámara)
+            if Z <= 0:
+                return None
+            
+            # Convertir de metros a centímetros
+            X_cm = X * 100
+            Y_cm = Y * 100
+            Z_cm = Z * 100
+            
+            return (X_cm, Y_cm, Z_cm)
+            
+        except Exception as e:
+            print(f"Error en triangulación DLT: {e}")
+            return None
+    
+    def triangulate_point(self, point_left, point_right, method='DLT'):
+        """
+        Triangula un punto 3D desde coordenadas 2D en imágenes RECTIFICADAS
+        
+        Args:
+            point_left: (x, y) en imagen izquierda rectificada
+            point_right: (x, y) en imagen derecha rectificada
+            method: 'DLT' (recomendado) o 'Q' (matriz de reproyección)
+        
+        Returns:
+            tuple: (X, Y, Z) coordenadas 3D en cm, o None si falla
+        """
+        if method == 'DLT':
+            return self.triangulate_point_DLT(point_left, point_right)
+        
+        # Método original con matriz Q (menos robusto)
         x_left, y_left = point_left
         x_right, y_right = point_right
         
@@ -199,10 +347,19 @@ class DepthEstimator:
             self.Q
         )[0, 0]
         
-        # Convertir de homogéneas a cartesianas
-        X = point_3d_homogeneous[0] / point_3d_homogeneous[3]
-        Y = point_3d_homogeneous[1] / point_3d_homogeneous[3]
-        Z = point_3d_homogeneous[2] / point_3d_homogeneous[3]
+        # Verificar si el resultado tiene 4 componentes (homogéneas)
+        if len(point_3d_homogeneous) == 4:
+            # Convertir de homogéneas a cartesianas
+            X = point_3d_homogeneous[0] / point_3d_homogeneous[3]
+            Y = point_3d_homogeneous[1] / point_3d_homogeneous[3]
+            Z = point_3d_homogeneous[2] / point_3d_homogeneous[3]
+        elif len(point_3d_homogeneous) == 3:
+            # Ya está en coordenadas cartesianas
+            X = point_3d_homogeneous[0]
+            Y = point_3d_homogeneous[1]
+            Z = point_3d_homogeneous[2]
+        else:
+            return None
         
         # Convertir a centímetros
         X_cm = X * 100
