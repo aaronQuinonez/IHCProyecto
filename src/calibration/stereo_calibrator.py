@@ -142,8 +142,8 @@ class StereoCalibrator:
         # Usamos CALIB_FIX_INTRINSIC porque ya tenemos los parámetros intrínsecos
         flags = cv2.CALIB_FIX_INTRINSIC
         
-        # Criterios de optimización
-        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 1e-6)
+        # Criterios de optimización (epsilon más permisivo para mejor convergencia)
+        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 0.001)
         
         try:
             # Ejecutar calibración estéreo
@@ -262,6 +262,10 @@ class StereoCalibrator:
         """
         Retorna los datos de calibración estéreo en formato serializable
         
+        ACTUALIZADO: Incluye transformaciones al mundo para DLT correcto
+        - Cámara izquierda = origen del mundo (R=I, T=0)
+        - Cámara derecha = transformación estéreo (R=R_stereo, T=T_stereo)
+        
         Returns:
             dict: Datos para guardar en JSON
         """
@@ -275,7 +279,18 @@ class StereoCalibrator:
             'fundamental_matrix': self.F.tolist(),
             'rms_error': float(self.stereo_error),
             'baseline_cm': float(np.linalg.norm(self.T) * 100),
-            'num_pairs': len(self.obj_points)
+            'num_pairs': len(self.obj_points),
+            # NUEVO: Transformaciones al mundo para DLT
+            'world_transforms': {
+                'left_camera': {
+                    'rotation': np.eye(3).tolist(),  # Cámara izq = origen (R = I)
+                    'translation': np.zeros((3, 1)).tolist()  # T = [0, 0, 0]
+                },
+                'right_camera': {
+                    'rotation': self.R.tolist(),  # Rotación estéreo
+                    'translation': self.T.tolist()  # Traslación estéreo
+                }
+            }
         }
         
         # Agregar parámetros de rectificación si existen
