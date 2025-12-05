@@ -59,6 +59,94 @@ class UIHelper:
         sub_x = (frame_width - sub_w) // 2
         sub_y = title_y + 120
         
+        # ========== DISENO DE DOS COLUMNAS ==========
+        col_y_start = 180
+        col_spacing = 20
+        col_width = (frame_width - col_spacing * 3) // 2
+        left_col_x = col_spacing
+        right_col_x = col_width + col_spacing * 2
+        
+        # ========== COLUMNA IZQUIERDA: INSTRUCCIONES ==========
+        left_panel_h = 280
+        
+        left_bg = frame.copy()
+        cv2.rectangle(left_bg, (left_col_x, col_y_start), 
+                     (left_col_x + col_width, col_y_start + left_panel_h), (30, 30, 50), -1)
+        cv2.rectangle(left_bg, (left_col_x, col_y_start), 
+                     (left_col_x + col_width, col_y_start + left_panel_h), (0, 200, 255), 3)
+        frame = cv2.addWeighted(frame, 0.6, left_bg, 0.4, 0)
+        
+        # Titulo de instrucciones
+        section_title = "INSTRUCCIONES"
+        cv2.putText(frame, section_title, (left_col_x + 20, col_y_start + 35),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 255), 2)
+        
+        # Linea decorativa
+        cv2.line(frame, (left_col_x + 20, col_y_start + 45), 
+                (left_col_x + col_width - 20, col_y_start + 45), (0, 200, 255), 2)
+        
+        # Instrucciones
+        instructions = [
+            "Coloca tus manos sobre la mesa",
+            "Toca las teclas virtuales",
+            "Manten contacto con la mesa",
+            "Usa ambos dedos para tocar"
+        ]
+        
+        y_offset = col_y_start + 70
+        for instruction in instructions:
+            cv2.circle(frame, (left_col_x + 35, y_offset - 5), 4, (0, 200, 255), -1)
+            cv2.putText(frame, instruction, (left_col_x + 50, y_offset),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
+            y_offset += 35
+        
+        # ========== COLUMNA DERECHA: CONTROLES ==========
+        right_panel_h = 280
+        
+        right_bg = frame.copy()
+        cv2.rectangle(right_bg, (right_col_x, col_y_start), 
+                     (right_col_x + col_width, col_y_start + right_panel_h), (30, 30, 50), -1)
+        cv2.rectangle(right_bg, (right_col_x, col_y_start), 
+                     (right_col_x + col_width, col_y_start + right_panel_h), (255, 200, 0), 3)
+        frame = cv2.addWeighted(frame, 0.6, right_bg, 0.4, 0)
+        
+        # Titulo de controles
+        controls_title = "CONTROLES"
+        cv2.putText(frame, controls_title, (right_col_x + 20, col_y_start + 35),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 200, 0), 2)
+        
+        # Linea decorativa
+        cv2.line(frame, (right_col_x + 20, col_y_start + 45), 
+                (right_col_x + col_width - 20, col_y_start + 45), (255, 200, 0), 2)
+        
+        # Controles
+        controls = [
+            "[G] Juego de ritmo",
+            "[N] Canciones",
+            "[F] Modo libre",
+            "[L] Aprender teoria",
+            "[C] Configuracion",
+            "[D] Dashboard",
+            "[Q] Salir"
+        ]
+        
+        y_ctrl = col_y_start + 70
+        for i, ctrl in enumerate(controls):
+            key_bg_x = right_col_x + 25
+            key_bg_y = y_ctrl + i * 35 - 20
+            key_bg_w = col_width - 50
+            key_bg_h = 22
+            
+            # Fondo destacado
+            key_overlay = frame.copy()
+            cv2.rectangle(key_overlay, (key_bg_x, key_bg_y), 
+                         (key_bg_x + key_bg_w, key_bg_y + key_bg_h), (40, 40, 60), -1)
+            frame = cv2.addWeighted(frame, 0.8, key_overlay, 0.2, 0)
+            
+            cv2.putText(frame, ctrl, (right_col_x + 30, y_ctrl + i * 35),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
+        
+        # ========== MENSAJE DE INICIO (ya movido arriba, solo agregamos efecto visual) ==========
         # Efecto parpadeante para el subtítulo
         blink_alpha = 0.3 + 0.2 * np.sin(self.frame_count * 0.1)
         blink_bg = frame.copy()
@@ -85,17 +173,22 @@ class UIHelper:
         cv2.rectangle(overlay, (0, 0), (frame_width, bar_height), (20, 20, 20), -1)
         frame = cv2.addWeighted(frame, 0.7, overlay, 0.3, 0)
         
-        # 1. Texto de Configuración (Izquierda)
-        config_text = "[C] Configuración"
-        cv2.putText(frame, config_text, (20, 35),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-
-        # 2. Texto de Volver al Menú (Derecha)
-        menu_text = "[ESC] Menú Principal"
-        (menu_w, _), _ = cv2.getTextSize(menu_text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
-        menu_x = frame_width - menu_w - 20
-        cv2.putText(frame, menu_text, (menu_x, 35),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 100, 100), 2)
+        # Modo actual
+        mode_text = "MODO JUEGO" if game_mode else "MODO LIBRE"
+        mode_color = (0, 255, 0) if game_mode else (255, 255, 0)
+        cv2.putText(frame, mode_text, (10, 28),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, mode_color, 2)
+        
+        # Teclas disponibles
+        if not game_mode:
+            help_text = "G: Juego | N: Canciones | F: Libre | L: Teoria | C: Config | D: Dashboard | Q: Salir"
+        else:
+            help_text = "F: Salir del juego | D: Dashboard | Q: Salir"
+        
+        frame_width = frame.shape[1]
+        text_size = cv2.getTextSize(help_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
+        cv2.putText(frame, help_text, (frame_width - text_size[0] - 10, 28),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
         
         return frame
     
