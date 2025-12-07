@@ -921,33 +921,6 @@ def main():
                 print('cam_right.resource.get(cv2.CAP_PROP_FRAME_COUNT):{:03f}'.
                     format(cam_right.resource.get(cv2.CAP_PROP_FRAME_COUNT)))
 
-
-        vk_left = vkb.VirtualKeyboard(pixel_width, pixel_height,
-                                      KEYBOARD_WHIITE_N_KEYS)
-        vk_right = vkb.VirtualKeyboard(pixel_width, pixel_height,
-                                      KEYBOARD_WHIITE_N_KEYS)
-        # Inicializar juego de ritmo
-        rhythm_game = RhythmGame(num_keys=KEYBOARD_TOT_KEYS)
-        game_mode = False  # False = modo libre, True = modo juego
-        
-        # Inicializar módulo de teoría
-        lesson_manager = get_lesson_manager()
-        theory_ui = TheoryUI(pixel_width * 2, pixel_height)
-        theory_mode = False  # False = otros modos, True = modo teoría
-        in_lesson = False  # True cuando está dentro de una lección
-        current_lesson = None
-        current_lesson_id = None
-        
-        # Inicializar módulo de canciones (Modo Ritmo mejorado)
-        songs_ui = SongsUI(pixel_width * 2, pixel_height)
-        songs_mode = False  # False = otros modos, True = modo selección de canciones
-        in_song = False  # True cuando está dentro de una canción
-        current_song = None
-
-        # Inicializar UI de configuración
-        config_ui = ConfigUI(pixel_width * 2, pixel_height)
-        config_mode = False  # False = otros modos, True = modo configuración
-
             # right_window_name = 'frame right'
             # cv2.namedWindow(right_window_name)
             # cv2.moveWindow(right_window_name,
@@ -1375,164 +1348,85 @@ def main():
                     
                     continue  # Saltar el resto del loop principal
 
-            # === MODO CANCIONES (RHYTH GAME CON MENU) ===
-            if songs_mode:
-                if in_song and current_song:
-                    # Ejecutar canción activa
-                    try:
-                        frame_left, frame_right, continue_song = current_song.run(
-                            frame_left, frame_right, vk_left, fs,
-                            left_detector, right_detector
-                        )
-                        
-                        if not continue_song:
-                            # Salir de la canción
-                            current_song.stop()
+                # === MODO CANCIONES (RHYTH GAME CON MENU) ===
+                if songs_mode:
+                    if in_song and current_song:
+                        # Ejecutar canción activa
+                        try:
+                            frame_left, frame_right, continue_song = current_song.run(
+                                frame_left, frame_right, vk_left, fs,
+                                left_detector, right_detector
+                            )
+                            
+                            if not continue_song:
+                                # Salir de la canción
+                                current_song.stop()
+                                in_song = False
+                                current_song = None
+                                print("Saliendo de la canción...")
+                        except Exception as e:
+                            print(f"Error durante la canción: {e}")
                             in_song = False
                             current_song = None
-                            print("Saliendo de la canción...")
-                    except Exception as e:
-                        print(f"Error durante la canción: {e}")
-                        in_song = False
-                        current_song = None
-                else:
-                    # Mostrar menú de canciones
-                    songs_dict = get_all_songs()
-                    if camera_in_front_of_you:
-                        h_frames = np.concatenate((frame_right, frame_left), axis=1)
                     else:
-                        h_frames = np.concatenate((frame_left, frame_right), axis=1)
-                    
-                    h_frames = songs_ui.draw_song_menu(h_frames, songs_dict)
-                    cv2.imshow(main_window_name, h_frames)
-                    
-                    # Manejar teclas del menú (SIN hacer otro waitKey aquí)
-                    # Flecha arriba o W
-                    if key == 82 or key == ord('w') or key == ord('W'):
-                        songs_ui.navigate(-1, len(songs_dict))
-                        print(f"Navegando canción: {songs_ui.get_selected_index() + 1}/{len(songs_dict)}")
-                    # Flecha abajo o S
-                    elif key == 84 or key == ord('s') or key == ord('S'):
-                        songs_ui.navigate(1, len(songs_dict))
-                        print(f"Navegando canción: {songs_ui.get_selected_index() + 1}/{len(songs_dict)}")
-                    # Números 1-9 para selección directa
-                    elif 49 <= key <= 57:  # Teclas 1-9
-                        selected_idx = key - 49  # Convertir a índice (0-8)
-                        if 0 <= selected_idx < len(songs_dict):
-                            songs_list = list(songs_dict.values())
-                            current_song = songs_list[selected_idx]
-                            try:
-                                current_song.start()
-                                in_song = True
-                                print(f"Iniciando canción: {current_song.name}")
-                            except Exception as e:
-                                print(f"Error al iniciar canción: {e}")
-                    # ENTER
-                    elif key == 13:  # ENTER
-                        selected_idx = songs_ui.get_selected_index()
-                        songs_list = list(songs_dict.values())
-                        if 0 <= selected_idx < len(songs_list):
-                            current_song = songs_list[selected_idx]
-                            try:
-                                current_song.start()
-                                in_song = True
-                                print(f"Iniciando canción: {current_song.name}")
-                            except Exception as e:
-                                print(f"Error al iniciar canción: {e}")
-                
-                # Teclas globales que funcionan en songs_mode
-                if key == ord('q') or key == ord('Q') or key == 27:  # Q, q o ESC
-                    songs_mode = False
-                    game_mode = False
-                    theory_mode = False
-                    songs_ui.reset_selection()
-                    if in_song and current_song:
-                        current_song.stop()
-                        in_song = False
-                        current_song = None
-                    print("Volviendo al modo libre...")
-                
-                continue  # Saltar el resto del loop principal (sin duplicar waitKey)
-
-            # Combinar frames antes de procesar UI
-            if camera_in_front_of_you:
-                h_frames = np.concatenate((frame_right, frame_left), axis=1)
-            else:
-                h_frames = np.concatenate((frame_left, frame_right), axis=1)
-            
-            # Mostrar pantalla de bienvenida si es necesario
-            if ui_helper.show_instructions:
-                welcome_frame = np.zeros((pixel_height, pixel_width * 2, 3), dtype=np.uint8)
-                welcome_frame = ui_helper.draw_welcome_screen(welcome_frame)
-                cv2.imshow(main_window_name, welcome_frame)
-                
-                # === MODO TEORÍA ===
-                if theory_mode:
-                    if in_lesson and current_lesson:
-                        # Ejecutar lección activa
-                        frame_left, frame_right, continue_lesson = current_lesson.run(
-                            frame_left, frame_right, vk_left, fs,
-                            left_detector, right_detector
-                        )
-                        
-                        if not continue_lesson:
-                            # Salir de la lección
-                            current_lesson.stop()
-                            in_lesson = False
-                            current_lesson = None
-                            print("Saliendo de la lección...")
-                    else:
-                        # Mostrar menú de lecciones
-                        lessons = lesson_manager.get_all_lessons()
+                        # Mostrar menú de canciones
+                        songs_dict = get_all_songs()
                         if camera_in_front_of_you:
                             h_frames = np.concatenate((frame_right, frame_left), axis=1)
                         else:
                             h_frames = np.concatenate((frame_left, frame_right), axis=1)
                         
-                        h_frames = theory_ui.draw_lesson_menu(h_frames, lessons)
+                        h_frames = songs_ui.draw_song_menu(h_frames, songs_dict)
                         cv2.imshow(main_window_name, h_frames)
                         
-                        # Manejar teclas del menú
-                        key = cv2.waitKey(1) & 0xFF
-                        # Flecha arriba (múltiples códigos para compatibilidad)
-                        if key == 82 or key == ord('w') or key == ord('W'):  # Flecha arriba o W
-                            theory_ui.navigate_up(len(lessons))
-                            print(f"Navegando: lección {theory_ui.get_selected_index() + 1}/{len(lessons)}")
-                        # Flecha abajo
-                        elif key == 84 or key == ord('s') or key == ord('S'):  # Flecha abajo o S
-                            theory_ui.navigate_down(len(lessons))
-                            print(f"Navegando: lección {theory_ui.get_selected_index() + 1}/{len(lessons)}")
+                        # Manejar teclas del menú (SIN hacer otro waitKey aquí)
+                        # Flecha arriba o W
+                        if key == 82 or key == ord('w') or key == ord('W'):
+                            songs_ui.navigate(-1, len(songs_dict))
+                            print(f"Navegando canción: {songs_ui.get_selected_index() + 1}/{len(songs_dict)}")
+                        # Flecha abajo o S
+                        elif key == 84 or key == ord('s') or key == ord('S'):
+                            songs_ui.navigate(1, len(songs_dict))
+                            print(f"Navegando canción: {songs_ui.get_selected_index() + 1}/{len(songs_dict)}")
                         # Números 1-9 para selección directa
                         elif 49 <= key <= 57:  # Teclas 1-9
                             selected_idx = key - 49  # Convertir a índice (0-8)
-                            if 0 <= selected_idx < len(lessons):
-                                lesson_id, lesson = lessons[selected_idx]
-                                current_lesson = lesson
-                                current_lesson_id = lesson_id
-                                current_lesson.start()
-                                in_lesson = True
-                                print(f"Iniciando lección: {lesson.name}")
+                            if 0 <= selected_idx < len(songs_dict):
+                                songs_list = list(songs_dict.values())
+                                current_song = songs_list[selected_idx]
+                                try:
+                                    current_song.start()
+                                    in_song = True
+                                    print(f"Iniciando canción: {current_song.name}")
+                                except Exception as e:
+                                    print(f"Error al iniciar canción: {e}")
                         # ENTER
                         elif key == 13:  # ENTER
-                            selected_idx = theory_ui.get_selected_index()
-                            if 0 <= selected_idx < len(lessons):
-                                lesson_id, lesson = lessons[selected_idx]
-                                current_lesson = lesson
-                                current_lesson_id = lesson_id
-                                current_lesson.start()
-                                in_lesson = True
-                                print(f"Iniciando lección: {lesson.name}")
-                        elif key == ord('q') or key == ord('Q'):
-                            theory_mode = False
-                            theory_ui.reset_selection()
-                            print("Saliendo del modo teoría...")
-                        elif key == 27:  # ESC
-                            theory_mode = False
-                            theory_ui.reset_selection()
-                        elif key != 255:  # Mostrar código de cualquier otra tecla para debug
-                            print(f"Tecla presionada en menú teoría: código {key}")
-                        continue  # Saltar el resto del loop principal
-                
+                            selected_idx = songs_ui.get_selected_index()
+                            songs_list = list(songs_dict.values())
+                            if 0 <= selected_idx < len(songs_list):
+                                current_song = songs_list[selected_idx]
+                                try:
+                                    current_song.start()
+                                    in_song = True
+                                    print(f"Iniciando canción: {current_song.name}")
+                                except Exception as e:
+                                    print(f"Error al iniciar canción: {e}")
+                    
+                    # Teclas globales que funcionan en songs_mode
+                    if key == ord('q') or key == ord('Q') or key == 27:  # Q, q o ESC
+                        songs_mode = False
+                        game_mode = False
+                        theory_mode = False
+                        songs_ui.reset_selection()
+                        if in_song and current_song:
+                            current_song.stop()
+                            in_song = False
+                            current_song = None
+                        print("Volviendo al modo libre...")
+                    
+                    continue  # Saltar el resto del loop principal (sin duplicar waitKey)
+
                 # Combinar frames antes de procesar UI
                 if camera_in_front_of_you:
                     h_frames = np.concatenate((frame_right, frame_left), axis=1)
@@ -1545,154 +1439,137 @@ def main():
                     welcome_frame = ui_helper.draw_welcome_screen(welcome_frame)
                     cv2.imshow(main_window_name, welcome_frame)
                     
-                    # Esperar a que se presione una tecla para continuar
-                    key = cv2.waitKey(1) & 0xFF
-                    if key != 255:  # Cualquier tecla
-                        ui_helper.show_instructions = False
-                        ui_helper.frame_count = ui_helper.instructions_timeout  # No volver a mostrar
-                    continue
-
-                if display_dashboard:
-                    # Display dashboard data
-                    fps1 = int(cam_left.current_frame_rate)
-                    fps2 = int(cam_right.current_frame_rate)
-                    cps_avg = int(round_half_up(fps))  # Average Cycles per second
-                    text = 'X: {:3.1f}\nY: {:3.1f}\nZ: {:3.1f}\nD: {:3.1f}\nDr: {:3.1f}\nDepth Thr: {:.2f}\nFPS:{}/{}\nCPS:{}'.format(X, Y, Z, D, D-delta_y, km.depth_threshold, fps1, fps2, cps_avg)
-                    lineloc = 0
-                    lineheight = 30
-                    for t in text.split('\n'):
-                        lineloc += lineheight
-                        cv2.putText(frame_left,
-                                    t,
-                                    (10, lineloc),              # location
-                                    cv2.FONT_HERSHEY_PLAIN,     # font
-                                    # cv2.FONT_HERSHEY_SIMPLEX, # font
-                                    1.5,                        # size
-                                    (0, 255, 0),                # color
-                                    2,                          # line width
-                                    cv2.LINE_AA,
-                                    False)
+                    # === MODO TEORÍA ===
+                    if theory_mode:
+                        if in_lesson and current_lesson:
+                            # Ejecutar lección activa
+                            frame_left, frame_right, continue_lesson = current_lesson.run(
+                                frame_left, frame_right, vk_left, fs,
+                                left_detector, right_detector
+                            )
+                            
+                            if not continue_lesson:
+                                # Salir de la lección
+                                current_lesson.stop()
+                                in_lesson = False
+                                current_lesson = None
+                                print("Saliendo de la lección...")
+                        else:
+                            # Mostrar menú de lecciones
+                            lessons = lesson_manager.get_all_lessons()
+                            if camera_in_front_of_you:
+                                h_frames = np.concatenate((frame_right, frame_left), axis=1)
+                            else:
+                                h_frames = np.concatenate((frame_left, frame_right), axis=1)
+                            
+                            h_frames = theory_ui.draw_lesson_menu(h_frames, lessons)
+                            cv2.imshow(main_window_name, h_frames)
+                            
+                            # Manejar teclas del menú
+                            key = cv2.waitKey(1) & 0xFF
+                            # Flecha arriba (múltiples códigos para compatibilidad)
+                            if key == 82 or key == ord('w') or key == ord('W'):  # Flecha arriba o W
+                                theory_ui.navigate_up(len(lessons))
+                                print(f"Navegando: lección {theory_ui.get_selected_index() + 1}/{len(lessons)}")
+                            # Flecha abajo
+                            elif key == 84 or key == ord('s') or key == ord('S'):  # Flecha abajo o S
+                                theory_ui.navigate_down(len(lessons))
+                                print(f"Navegando: lección {theory_ui.get_selected_index() + 1}/{len(lessons)}")
+                            # Números 1-9 para selección directa
+                            elif 49 <= key <= 57:  # Teclas 1-9
+                                selected_idx = key - 49  # Convertir a índice (0-8)
+                                if 0 <= selected_idx < len(lessons):
+                                    lesson_id, lesson = lessons[selected_idx]
+                                    current_lesson = lesson
+                                    current_lesson_id = lesson_id
+                                    current_lesson.start()
+                                    in_lesson = True
+                                    print(f"Iniciando lección: {lesson.name}")
+                            # ENTER
+                            elif key == 13:  # ENTER
+                                selected_idx = theory_ui.get_selected_index()
+                                if 0 <= selected_idx < len(lessons):
+                                    lesson_id, lesson = lessons[selected_idx]
+                                    current_lesson = lesson
+                                    current_lesson_id = lesson_id
+                                    current_lesson.start()
+                                    in_lesson = True
+                                    print(f"Iniciando lección: {lesson.name}")
+                            elif key == ord('q') or key == ord('Q'):
+                                theory_mode = False
+                                theory_ui.reset_selection()
+                                print("Saliendo del modo teoría...")
+                            elif key == 27:  # ESC
+                                theory_mode = False
+                                theory_ui.reset_selection()
+                            elif key != 255:  # Mostrar código de cualquier otra tecla para debug
+                                print(f"Tecla presionada en menú teoría: código {key}")
+                            continue  # Saltar el resto del loop principal
                     
-                    # Re-combinar frames después de actualizar el izquierdo
+                    # Combinar frames antes de procesar UI
                     if camera_in_front_of_you:
                         h_frames = np.concatenate((frame_right, frame_left), axis=1)
                     else:
                         h_frames = np.concatenate((frame_left, frame_right), axis=1)
+                    
+                    # Mostrar pantalla de bienvenida si es necesario
+                    if ui_helper.show_instructions:
+                        welcome_frame = np.zeros((pixel_height, pixel_width * 2, 3), dtype=np.uint8)
+                        welcome_frame = ui_helper.draw_welcome_screen(welcome_frame)
+                        cv2.imshow(main_window_name, welcome_frame)
+                        
+                        # Esperar a que se presione una tecla para continuar
+                        key = cv2.waitKey(1) & 0xFF
+                        if key != 255:  # Cualquier tecla
+                            ui_helper.show_instructions = False
+                            ui_helper.frame_count = ui_helper.instructions_timeout  # No volver a mostrar
+                        continue
 
-                # Display current target
-                # if fingers_left_queue:
-                #     frame_add_crosshairs(frame_left, x1m, y1m, 24)
-                #     frame_add_crosshairs(frame_right, x2m, y2m, 24)
+                    if display_dashboard:
+                        # Display dashboard data
+                        fps1 = int(cam_left.current_frame_rate)
+                        fps2 = int(cam_right.current_frame_rate)
+                        cps_avg = int(round_half_up(fps))  # Average Cycles per second
+                        text = 'X: {:3.1f}\nY: {:3.1f}\nZ: {:3.1f}\nD: {:3.1f}\nDr: {:3.1f}\nDepth Thr: {:.2f}\nFPS:{}/{}\nCPS:{}'.format(X, Y, Z, D, D-delta_y, km.depth_threshold, fps1, fps2, cps_avg)
+                        lineloc = 0
+                        lineheight = 30
+                        for t in text.split('\n'):
+                            lineloc += lineheight
+                            cv2.putText(frame_left,
+                                        t,
+                                        (10, lineloc),              # location
+                                        cv2.FONT_HERSHEY_PLAIN,     # font
+                                        # cv2.FONT_HERSHEY_SIMPLEX, # font
+                                        1.5,                        # size
+                                        (0, 255, 0),                # color
+                                        2,                          # line width
+                                        cv2.LINE_AA,
+                                        False)
+                        
+                        # Re-combinar frames después de actualizar el izquierdo
+                        if camera_in_front_of_you:
+                            h_frames = np.concatenate((frame_right, frame_left), axis=1)
+                        else:
+                            h_frames = np.concatenate((frame_left, frame_right), axis=1)
 
-                # if fingers_left_queue:
-                #     frame_add_crosshairs(frame_left, x1m, y1m, 24)
-                #     frame_add_crosshairs(frame_right, x2m, y2m, 24)
-                # if X > 0 and Y > 0:
-                frame_add_crosshairs(frame_left, x_left_finger_screen_pos, y_left_finger_screen_pos, 24)
-                # Pendiente : ...frame_add_crosshairs(frame_right, x_left_finger_screen_pos, y_left_finger_screen_pos, 24)
+                    # Display current target
+                    # if fingers_left_queue:
+                    #     frame_add_crosshairs(frame_left, x1m, y1m, 24)
+                    #     frame_add_crosshairs(frame_right, x2m, y2m, 24)
+
+                    # if fingers_left_queue:
+                    #     frame_add_crosshairs(frame_left, x1m, y1m, 24)
+                    #     frame_add_crosshairs(frame_right, x2m, y2m, 24)
+                    # if X > 0 and Y > 0:
+                    frame_add_crosshairs(frame_left, x_left_finger_screen_pos, y_left_finger_screen_pos, 24)
+                    # Pendiente : ...frame_add_crosshairs(frame_right, x_left_finger_screen_pos, y_left_finger_screen_pos, 24)
 
 
 
-                # Display frames
-                cv2.imshow(main_window_name, h_frames)
+                    # Display frames
+                    cv2.imshow(main_window_name, h_frames)
 
 
-
-            # Detect control keys
-            key = cv2.waitKey(1) & 0xFF
-            if cv2.getWindowProperty(
-                main_window_name, cv2.WND_PROP_VISIBLE) < 1:
-                break
-            elif key == ord('q'):
-                break
-            elif key == ord('c') or key == ord('C'):  # ========== MODO CONFIGURACIÓN ==========
-                # Solo toggle si NO estamos en config_mode, theory_mode o game_mode
-                if not config_mode and not theory_mode and not game_mode:
-                    config_mode = True
-                    print("\n=== MODO CONFIGURACIÓN ACTIVADO ===")
-                    print("Controles:")
-                    print("  W/S o ↑/↓: Navegar parámetros")
-                    print("  A/D o ←/→: Disminuir/Aumentar valor")
-                    print("  1-4: Aplicar preset (Suave/Normal/Estricto/Clásico)")
-                    print("  Q/ESC: Salir")
-                    print("=====================================\n")
-            elif key == ord('d'):
-                if display_dashboard:
-                    display_dashboard = False
-                else:
-                    display_dashboard = True
-            elif key == ord('n') or key == ord('N'):  # ========== MODO CANCIONES (NEW) ==========
-                songs_mode = True
-                game_mode = False
-                theory_mode = False
-                if rhythm_game.is_playing:
-                    rhythm_game.stop_game()
-                songs_ui.reset_selection()
-                print("¡Modo Canciones activado! Selecciona una canción. Presiona Q para salir.")
-            elif key == ord('g'):  # ========== NUEVA TECLA ==========
-                game_mode = True
-                rhythm_game.start_game(TUTORIAL_FACIL)
-                print("¡Juego de ritmo iniciado! Presiona 'f' para volver al modo libre")
-                ui_helper.reset_instructions()  # Mostrar instrucciones del juego
-            elif key == ord('f'):  # ========== NUEVA TECLA ==========
-                # Detener juego si está activo
-                if game_mode and rhythm_game.is_playing:
-                    rhythm_game.stop_game()
-                game_mode = False
-                theory_mode = False
-                print("Modo libre activado")
-                ui_helper.reset_instructions()  # Mostrar instrucciones del modo libre
-            elif key == ord('l'):  # ========== MODO TEORÍA ==========
-                theory_mode = True
-                game_mode = False
-                if rhythm_game.is_playing:
-                    rhythm_game.stop_game()
-                theory_ui.reset_selection()
-                print("¡Modo Teoría activado! Selecciona una lección. Presiona Q para salir.")
-            elif key == ord('t'):  # Subir nivel de mesa (ESTÉREO: aumentar umbral de profundidad)
-                new_threshold = km.depth_threshold + 0.2
-                km.set_depth_threshold(new_threshold)
-                print(f"Umbral de profundidad aumentado a: {new_threshold:.2f} cm")
-            elif key == ord('b'):  # Bajar nivel de mesa (ESTÉREO: disminuir umbral de profundidad)
-                new_threshold = max(0.5, km.depth_threshold - 0.2)
-                km.set_depth_threshold(new_threshold)
-                print(f"Umbral de profundidad disminuido a: {new_threshold:.2f} cm")
-            elif key == ord('p'):  # Mostrar profundidades detectadas
-                if display_dashboard:
-                    print(f"Profundidades detectadas (D - delta_y):")
-                    for fid, depth in finger_depths_dict.items():
-                        print(f"  Dedo {fid}: {depth:.2f} cm")
-            elif key == 27 and in_lesson:  # ESC dentro de lección
-                if current_lesson:
-                    current_lesson.stop()
-                in_lesson = False
-                current_lesson = None
-                print("Volviendo al menú de lecciones...")
-            elif in_lesson and current_lesson:  # Pasar teclas a la lección activa
-                current_lesson.handle_key(key, fs, octave_base)
-            elif key != 255:
-                print('KEY PRESS:', [chr(key)])
-
-    # ------------------------------
-    # full error catch
-    # ------------------------------
-    except Exception:
-        print(traceback.format_exc())
-
-    # ------------------------------
-    # close all
-    # ------------------------------
-
-    # Fluidsynth
-    try:
-        fs.delete()
-    except Exception:
-        pass
-    # close camera1
-    try:
-        cam_left.stop()
-    except Exception:
-        pass
 
                 # Detect control keys
                 key = cv2.waitKey(1) & 0xFF
@@ -1717,6 +1594,14 @@ def main():
                         display_dashboard = False
                     else:
                         display_dashboard = True
+                elif key == ord('n') or key == ord('N'):  # ========== MODO CANCIONES (NEW) ==========
+                    songs_mode = True
+                    game_mode = False
+                    theory_mode = False
+                    if rhythm_game.is_playing:
+                        rhythm_game.stop_game()
+                    songs_ui.reset_selection()
+                    print("¡Modo Canciones activado! Selecciona una canción. Presiona Q para salir.")
                 elif key == ord('g'):  # ========== NUEVA TECLA ==========
                     game_mode = True
                     rhythm_game.start_game(TUTORIAL_FACIL)
