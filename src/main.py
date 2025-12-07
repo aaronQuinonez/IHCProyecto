@@ -65,6 +65,7 @@ import cv2
 import numpy as np
 import fluidsynth
 from collections import deque
+import sys
 
 # --- Vision ---
 from src.vision import video_thread, angles
@@ -75,6 +76,7 @@ from src.vision.stereo_config import StereoConfig
 
 # --- Calibration ---
 from src.calibration import CalibrationManager
+from src.calibration.calibration_config import CalibrationConfig
 
 # --- Piano ---
 from src.piano import virtual_keyboard as vkb
@@ -97,18 +99,12 @@ from src.songs.song_manager import get_all_songs
 
 # --- Config UI ---
 from src.ui.config_ui import ConfigUI
+from src.config.app_config import AppConfig
 
 # --- Common ---
 from src.common.toolbox import round_half_up
 
-def frame_add_crosshairs(frame,
-                         x,
-                         y,
-                         r=20,
-                         lc=(0, 0, 255),
-                         cc=(0, 0, 255),
-                         lw=2,
-                         cw=1):
+def frame_add_crosshairs(frame, x, y, r=20, lc=(0, 0, 255), cc=(0, 0, 255), lw=2, cw=1):
 
     x = int(round(x, 0))
     y = int(round(y, 0))
@@ -750,26 +746,30 @@ def main():
             ui_helper_menu = UIHelper(pixel_width * 2, pixel_height)
             ui_helper_menu.show_instructions = False  # no mostrar instrucciones con OpenCV aquí
 
+            print("--- DEBUG: Iniciando Menú Principal ---")
             # MENÚ PRINCIPAL (PyQt6)
             start_mode = show_main_menu()   # "rhythm", "free", "theory", "config", "exit"
+            print(f"--- DEBUG: Modo seleccionado: {start_mode} ---")
             
             # Detectar si es una opción de teoría
             if start_mode and start_mode.startswith("theory_"):
                 theory_mode = True
                 game_mode = False
                 
-                # Mapear la opción a la lección correspondiente
-                lesson_map = {
-                    "theory_chords": "Acordes Básicos",   # O el ID que uses en lesson_manager
-                    "theory_intervals": "Intervalos",
-                    "theory_rhythm": "Ritmo Básico",
-                    "theory_scales": "Escalas Mayores"
-                }
+                # 1. Extraer el ID de la lección (ej: 'theory_chords' -> 'chords')
+                target_lesson_id = start_mode.replace("theory_", "")
                 
-                selected_lesson_name = lesson_map.get(start_mode)
-                # Aquí añadirías la lógica para iniciar esa lección específica
-                # lesson_manager.start_lesson_by_name(selected_lesson_name)
-                print(f"Modo TEORÍA iniciado: {selected_lesson_name}")
+                # 2. Buscar y cargar la lección
+                lesson = lesson_manager.get_lesson(target_lesson_id)
+                
+                if lesson:
+                    current_lesson = lesson
+                    current_lesson.start()
+                    in_lesson = True
+                    print(f"✓ Modo TEORÍA iniciado: Lección '{lesson.name}'")
+                else:
+                    print(f"⚠ Lección '{target_lesson_id}' no encontrada. Mostrando menú.")
+                    theory_ui.reset_selection()
 
             
             if start_mode is None or start_mode == "exit":
@@ -960,6 +960,9 @@ def main():
             in_lesson = False
             current_lesson = None
             config_mode = False
+            songs_mode = False
+            in_song = False
+            current_song = None
             
             # Inicializar módulo de teoría
             lesson_manager = get_lesson_manager()
@@ -981,6 +984,11 @@ def main():
                 print("Modo JUEGO DE RITMO iniciado desde el menú principal.")
                 rhythm_game.start_game(TUTORIAL_FACIL)
 
+            elif initial_mode == "songs":  # <--- ESTO FALTABA
+                songs_mode = True
+                game_mode = False
+                theory_mode = False
+            
             elif initial_mode == "free":
                 game_mode = False
                 theory_mode = False
@@ -1035,7 +1043,7 @@ def main():
             # ------------------------------
 
             fs = fluidsynth.Synth()
-            fs.start(driver='dsound') # Windows
+            fs.start() # Windows
             sfid = fs.sfload(r"C:\Users\MI PC\OneDrive\Desktop\fluid\FluidR3_GM.sf2")
 
 
@@ -1090,11 +1098,17 @@ def main():
             ui_helper.show_instructions = False
 
             
+            print("--- DEBUG: Entrando al bucle de video (While True) ---")
             # Optimización: cachear transformaciones de flip
             while True:
                 cycles += 1
-                # get frames - reducir wait en modo juego para mejor respuesta
-                wait_time = 0.0 if game_mode else 0.1  # Sin delay en modo juego
+                if cycles % 100 == 0:
+                    print(f"--- DEBUG: Ciclo {cycles} - Ejecutando... ---")
+
+                # IMPORTANTE: Cambia 0.0 por 0.001. 
+                # 0.0 puede causar bloqueo total si la cámara demora un milisegundo.
+                wait_time = 0.001 if game_mode else 0.1
+                
                 finished_left, frame_left = cam_left.next(black=True, wait=wait_time)
                 finished_right, frame_right = cam_right.next(black=True, wait=wait_time)
 
@@ -1123,6 +1137,7 @@ def main():
                 
                 # En modo juego: dibujar notas cayendo DESPUÉS del teclado pero ANTES de las manos
                 if game_mode:
+                    if cycles % 100 == 0: print("--- DEBUG: Actualizando lógica de RHYTHM GAME ---")
                     rhythm_game.update()
                     frame_left = rhythm_game.draw(
                         frame_left, 
@@ -1290,6 +1305,69 @@ def main():
                 # Actualizar UI Helper
                 ui_helper.update()
                 
+                # === MODO TEORÍA (LECCIONES) ===
+                if theory_mode:
+                    # A. Si hay una lección activa, ejecutarla
+                    if in_lesson and current_lesson:
+                        frame_left, frame_right, continue_lesson = current_lesson.run(
+                            frame_left, frame_right, vk_left, fs,
+                            left_detector, right_detector
+                        )
+                        
+                        if not continue_lesson:
+                            current_lesson.stop()
+                            in_lesson = False
+                            current_lesson = None
+                            print("Fin de la lección.")
+                    
+                    # Preparar frames para mostrar
+                    if camera_in_front_of_you:
+                        h_frames = np.concatenate((frame_right, frame_left), axis=1)
+                    else:
+                        h_frames = np.concatenate((frame_left, frame_right), axis=1)
+
+                    # B. Si NO hay lección activa, mostrar menú de teoría
+                    if not in_lesson:
+                        lessons = lesson_manager.get_all_lessons()
+                        h_frames = theory_ui.draw_lesson_menu(h_frames, lessons)
+
+                    cv2.imshow(main_window_name, h_frames)
+                    
+                    # Control de teclas EXCLUSIVO para modo teoría
+                    key = cv2.waitKey(1) & 0xFF
+                    
+                    # Navegación del menú (Solo si no estamos en lección)
+                    if not in_lesson:
+                        if key == 82 or key == ord('w') or key == ord('W'):
+                            theory_ui.navigate_up(len(lessons))
+                        elif key == 84 or key == ord('s') or key == ord('S'):
+                            theory_ui.navigate_down(len(lessons))
+                        elif key == 13: # ENTER
+                            idx = theory_ui.get_selected_index()
+                            if 0 <= idx < len(lessons):
+                                _, lesson = lessons[idx]
+                                current_lesson = lesson
+                                current_lesson.start()
+                                in_lesson = True
+                    else:
+                        # Si estamos en lección, pasar teclas a la lección (para tocar notas, etc)
+                        current_lesson.handle_key(key, fs, octave_base)
+
+                    # Salir con Q o ESC
+                    if key == ord('q') or key == ord('Q') or key == 27:
+                        if in_lesson:
+                            current_lesson.stop()
+                            in_lesson = False
+                            current_lesson = None
+                        else:
+                            theory_mode = False
+                            print("Saliendo de modo teoría...")
+                    
+                    # IMPORTANTE: Validar cierre de ventana
+                    if cycles > 20 and cv2.getWindowProperty(main_window_name, cv2.WND_PROP_VISIBLE) < 1:
+                        break
+                        
+                    continue
                 # === MODO CONFIGURACIÓN ===
                 if config_mode:
                     # Mostrar panel de configuración
@@ -1439,144 +1517,67 @@ def main():
                     welcome_frame = ui_helper.draw_welcome_screen(welcome_frame)
                     cv2.imshow(main_window_name, welcome_frame)
                     
-                    # === MODO TEORÍA ===
-                    if theory_mode:
-                        if in_lesson and current_lesson:
-                            # Ejecutar lección activa
-                            frame_left, frame_right, continue_lesson = current_lesson.run(
-                                frame_left, frame_right, vk_left, fs,
-                                left_detector, right_detector
-                            )
-                            
-                            if not continue_lesson:
-                                # Salir de la lección
-                                current_lesson.stop()
-                                in_lesson = False
-                                current_lesson = None
-                                print("Saliendo de la lección...")
-                        else:
-                            # Mostrar menú de lecciones
-                            lessons = lesson_manager.get_all_lessons()
-                            if camera_in_front_of_you:
-                                h_frames = np.concatenate((frame_right, frame_left), axis=1)
-                            else:
-                                h_frames = np.concatenate((frame_left, frame_right), axis=1)
-                            
-                            h_frames = theory_ui.draw_lesson_menu(h_frames, lessons)
-                            cv2.imshow(main_window_name, h_frames)
-                            
-                            # Manejar teclas del menú
-                            key = cv2.waitKey(1) & 0xFF
-                            # Flecha arriba (múltiples códigos para compatibilidad)
-                            if key == 82 or key == ord('w') or key == ord('W'):  # Flecha arriba o W
-                                theory_ui.navigate_up(len(lessons))
-                                print(f"Navegando: lección {theory_ui.get_selected_index() + 1}/{len(lessons)}")
-                            # Flecha abajo
-                            elif key == 84 or key == ord('s') or key == ord('S'):  # Flecha abajo o S
-                                theory_ui.navigate_down(len(lessons))
-                                print(f"Navegando: lección {theory_ui.get_selected_index() + 1}/{len(lessons)}")
-                            # Números 1-9 para selección directa
-                            elif 49 <= key <= 57:  # Teclas 1-9
-                                selected_idx = key - 49  # Convertir a índice (0-8)
-                                if 0 <= selected_idx < len(lessons):
-                                    lesson_id, lesson = lessons[selected_idx]
-                                    current_lesson = lesson
-                                    current_lesson_id = lesson_id
-                                    current_lesson.start()
-                                    in_lesson = True
-                                    print(f"Iniciando lección: {lesson.name}")
-                            # ENTER
-                            elif key == 13:  # ENTER
-                                selected_idx = theory_ui.get_selected_index()
-                                if 0 <= selected_idx < len(lessons):
-                                    lesson_id, lesson = lessons[selected_idx]
-                                    current_lesson = lesson
-                                    current_lesson_id = lesson_id
-                                    current_lesson.start()
-                                    in_lesson = True
-                                    print(f"Iniciando lección: {lesson.name}")
-                            elif key == ord('q') or key == ord('Q'):
-                                theory_mode = False
-                                theory_ui.reset_selection()
-                                print("Saliendo del modo teoría...")
-                            elif key == 27:  # ESC
-                                theory_mode = False
-                                theory_ui.reset_selection()
-                            elif key != 255:  # Mostrar código de cualquier otra tecla para debug
-                                print(f"Tecla presionada en menú teoría: código {key}")
-                            continue  # Saltar el resto del loop principal
+                    # Esperar tecla SOLO para salir de instrucciones
+                    key = cv2.waitKey(1) & 0xFF
+                    if key != 255:  # Si se presiona cualquier tecla
+                        ui_helper.show_instructions = False
+                        ui_helper.frame_count = ui_helper.instructions_timeout
                     
-                    # Combinar frames antes de procesar UI
+                    # Importante: Saltar el resto del bucle mientras se muestran instrucciones
+                    continue
+                if display_dashboard:
+                    # Display dashboard data
+                    fps1 = int(cam_left.current_frame_rate)
+                    fps2 = int(cam_right.current_frame_rate)
+                    cps_avg = int(round_half_up(fps))
+                    text = 'X: {:3.1f}\nY: {:3.1f}\nZ: {:3.1f}\nD: {:3.1f}\nDr: {:3.1f}\nDepth Thr: {:.2f}\nFPS:{}/{}\nCPS:{}'.format(X, Y, Z, D, D-delta_y, km.depth_threshold, fps1, fps2, cps_avg)
+                    lineloc = 0
+                    lineheight = 30
+                    for t in text.split('\n'):
+                        lineloc += lineheight
+                        cv2.putText(frame_left,
+                                    t,
+                                    (10, lineloc),
+                                    cv2.FONT_HERSHEY_PLAIN,
+                                    1.5,
+                                    (0, 255, 0),
+                                    2,
+                                    cv2.LINE_AA,
+                                    False)
+                    
+                    # Re-combinar frames si se modificó frame_left con texto
                     if camera_in_front_of_you:
                         h_frames = np.concatenate((frame_right, frame_left), axis=1)
                     else:
                         h_frames = np.concatenate((frame_left, frame_right), axis=1)
-                    
-                    # Mostrar pantalla de bienvenida si es necesario
-                    if ui_helper.show_instructions:
-                        welcome_frame = np.zeros((pixel_height, pixel_width * 2, 3), dtype=np.uint8)
-                        welcome_frame = ui_helper.draw_welcome_screen(welcome_frame)
-                        cv2.imshow(main_window_name, welcome_frame)
-                        
-                        # Esperar a que se presione una tecla para continuar
-                        key = cv2.waitKey(1) & 0xFF
-                        if key != 255:  # Cualquier tecla
-                            ui_helper.show_instructions = False
-                            ui_helper.frame_count = ui_helper.instructions_timeout  # No volver a mostrar
-                        continue
+                # Display current target
+                # if fingers_left_queue:
+                #     frame_add_crosshairs(frame_left, x1m, y1m, 24)
+                #     frame_add_crosshairs(frame_right, x2m, y2m, 24)
 
-                    if display_dashboard:
-                        # Display dashboard data
-                        fps1 = int(cam_left.current_frame_rate)
-                        fps2 = int(cam_right.current_frame_rate)
-                        cps_avg = int(round_half_up(fps))  # Average Cycles per second
-                        text = 'X: {:3.1f}\nY: {:3.1f}\nZ: {:3.1f}\nD: {:3.1f}\nDr: {:3.1f}\nDepth Thr: {:.2f}\nFPS:{}/{}\nCPS:{}'.format(X, Y, Z, D, D-delta_y, km.depth_threshold, fps1, fps2, cps_avg)
-                        lineloc = 0
-                        lineheight = 30
-                        for t in text.split('\n'):
-                            lineloc += lineheight
-                            cv2.putText(frame_left,
-                                        t,
-                                        (10, lineloc),              # location
-                                        cv2.FONT_HERSHEY_PLAIN,     # font
-                                        # cv2.FONT_HERSHEY_SIMPLEX, # font
-                                        1.5,                        # size
-                                        (0, 255, 0),                # color
-                                        2,                          # line width
-                                        cv2.LINE_AA,
-                                        False)
-                        
-                        # Re-combinar frames después de actualizar el izquierdo
-                        if camera_in_front_of_you:
-                            h_frames = np.concatenate((frame_right, frame_left), axis=1)
-                        else:
-                            h_frames = np.concatenate((frame_left, frame_right), axis=1)
-
-                    # Display current target
-                    # if fingers_left_queue:
-                    #     frame_add_crosshairs(frame_left, x1m, y1m, 24)
-                    #     frame_add_crosshairs(frame_right, x2m, y2m, 24)
-
-                    # if fingers_left_queue:
-                    #     frame_add_crosshairs(frame_left, x1m, y1m, 24)
-                    #     frame_add_crosshairs(frame_right, x2m, y2m, 24)
-                    # if X > 0 and Y > 0:
-                    frame_add_crosshairs(frame_left, x_left_finger_screen_pos, y_left_finger_screen_pos, 24)
-                    # Pendiente : ...frame_add_crosshairs(frame_right, x_left_finger_screen_pos, y_left_finger_screen_pos, 24)
-
-
-
-                    # Display frames
-                    cv2.imshow(main_window_name, h_frames)
-
-
-
+                # if fingers_left_queue:
+                #     frame_add_crosshairs(frame_left, x1m, y1m, 24)
+                #     frame_add_crosshairs(frame_right, x2m, y2m, 24)
+                # if X > 0 and Y > 0:
+                frame_add_crosshairs(frame_left, x_left_finger_screen_pos, y_left_finger_screen_pos, 24)
+                # Pendiente : ...frame_add_crosshairs(frame_right, x_left_finger_screen_pos, y_left_finger_screen_pos, 24)
+                # Display frames
+                cv2.imshow(main_window_name, h_frames)
+                if (cycles % 10 == 0):
+                    end = time.time()
+                    seconds = end - start
+                    if seconds > 0:
+                        fps = 10 / seconds
+                    start = time.time()
                 # Detect control keys
                 key = cv2.waitKey(1) & 0xFF
-                if cv2.getWindowProperty(
-                    main_window_name, cv2.WND_PROP_VISIBLE) < 1:
+                #if cv2.getWindowProperty(
+                    #main_window_name, cv2.WND_PROP_VISIBLE) < 1:
+                    #break
+                if cycles > 20 and cv2.getWindowProperty(main_window_name, cv2.WND_PROP_VISIBLE) < 1:
+                    print("--- DEBUG: Ventana cerrada por el usuario. Saliendo... ---")
                     break
-                elif key == ord('q'):
+                if key == ord('q'):
                     break
                 elif key == ord('c') or key == ord('C'):  # ========== MODO CONFIGURACIÓN ==========
                     # Solo toggle si NO estamos en config_mode, theory_mode o game_mode
