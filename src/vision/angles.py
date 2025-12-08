@@ -10,39 +10,11 @@ import os
 import math
 import cv2
 
-# ------------------------------
 # Frame Angles and Distance
-# ------------------------------
 
 class Frame_Angles:
 
-    # ------------------------------
-    # User Instructions
-    # ------------------------------
-
-    # Set the pixel width and height.
-    # Set the angle width (and angle height if it is disproportional).
-    # These can be set during init, or afterwards.
-
-    # Run build_frame.
-
-    # Use angles_from_center(self,x,y,top_left=True,degrees=True) to get x,y angles from center.
-    # If top_left is True, input x,y pixels are measured from the top left of frame.
-    # If top_left is False, input x,y pixels are measured from the center of the frame.
-    # If degrees is True, returned angles are in degrees, otherwise radians.
-    # The returned x,y angles are always from the frame center, negative is left,down and positive is right,up.
-
-    # Use pixels_from_center(self,x,y,degrees=True) to convert angle x,y to pixel x,y (always from center).
-    # This is the reverse of angles_from_center.
-    # If degrees is True, input x,y should be in degrees, otherwise radians.
-
-    # Use frame_add_crosshairs(frame) to add crosshairs to a frame.
-    # Use frame_add_degrees(frame) to add 10 degree lines to a frame (matches target).
-    # Use frame_make_target(openfile=True) to make an SVG image target and open it (matches frame with degrees).
-
-    # ------------------------------
     # User Variables
-    # ------------------------------
 
     pixel_width = 640
     pixel_height = 480
@@ -50,19 +22,14 @@ class Frame_Angles:
     angle_width = 60
     angle_height = None
 
-    # ------------------------------
     # System Variables
-    # ------------------------------
-
     x_origin = None
     y_origin = None
 
     x_adjacent = None
     x_adjacent = None
 
-    # ------------------------------
     # Init Functions
-    # ------------------------------
 
     def __init__(self,pixel_width=None,pixel_height=None,angle_width=None,angle_height=None):
 
@@ -99,10 +66,7 @@ class Frame_Angles:
         self.x_adjacent = self.x_origin / math.tan(math.radians(self.angle_width/2))
         self.y_adjacent = self.y_origin / math.tan(math.radians(self.angle_height/2))
 
-    # ------------------------------
     # Pixels-to-Angles Functions
-    # ------------------------------
-
     def angles(self,x,y):
 
         return self.angles_from_center(x,y)
@@ -191,17 +155,6 @@ class Frame_Angles:
 
     def location(self,pdistance,lcamera,rcamera,center=False,degrees=True):
 
-        # return (X,Y,Z,D) of target from left-camera-center (or baseline midpoint if center-True)
-
-        # pdistance is the measure from left-camera-center to right-camera-center (point-to-point, or point distance)
-        # lcamera = left-camera-center (Xangle-to-target,Yangle-to-target)
-        # rcamera = right-camera-center (Xangle-to-target,Yangle-to-target)
-        # left-camera-center is origin (0,0) for return (X,Y)
-        # X is measured along the baseline from left-camera-center to right-camera-center
-        # Y is measured from the baseline
-        # Z is measured vertically from left-camera-center (should be same as right-camera-center)
-        # D is distance from left-camera-center (based on pdistance units)
-
         # separate values
         lxangle,lyangle = lcamera
         rxangle,ryangle = rcamera
@@ -232,9 +185,7 @@ class Frame_Angles:
         # done
         return X,Y,Z,D
 
-    # ------------------------------
     # Tertiary Functions
-    # ------------------------------
 
     def frame_add_crosshairs(self,frame):
 

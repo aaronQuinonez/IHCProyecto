@@ -30,68 +30,39 @@ class ScalesLesson(BaseLesson):
         self.current_scale = 0
         self.current_note = 0
         self.auto_play = False
+        
+        self._update_ui_state()
     
-    def run(self, frame_left, frame_right, virtual_keyboard, synth, hand_detector_left=None, hand_detector_right=None):
-        """Ejecuta la lección de escalas"""
-        
-        # Header
-        frame_left = self.draw_lesson_header(frame_left)
-        
-        # Info de escala actual
+    def _update_ui_state(self):
+        """Actualiza el estado interno para PyQt6"""
         scale_name, scale_notes, pattern = self.scales[self.current_scale]
-        
-        instructions = [
-            f"Escala: {scale_name}",
-            f"Patron: {pattern}",
-            f"Notas: {len(scale_notes)} notas",
-            "",
-            "Controles:",
-            "ESPACIO: Tocar nota actual",
-            "D o FLECHA DER: Siguiente nota",
-            "A o FLECHA IZQ: Nota anterior",
-            "R: Auto-reproducir escala",
-            "N: Siguiente escala | P: Escala anterior"
-        ]
-        frame_left = self.draw_instructions(frame_left, instructions, y_start=80)
-        
-        # Progreso en la escala
-        frame_left = self.draw_progress_bar(frame_left, self.current_note + 1, 
-                                           len(scale_notes), y=350)
-        
-        # Visualización de notas
-        self._visualize_scale(frame_left, scale_notes)
-        
-        # Frame derecho
-        frame_right = self.draw_lesson_header(frame_right, "Escalas")
-        self._draw_scale_diagram(frame_right, scale_notes, pattern)
-        
-        return frame_left, frame_right, True
-    
-    def _visualize_scale(self, frame, scale_notes):
-        """Visualiza las notas de la escala"""
         note_names = ["Do", "Do#", "Re", "Re#", "Mi", "Fa", "Fa#", "Sol", "Sol#", "La", "La#", "Si"]
         
-        y = 400
-        x_start = 50
+        # Construir instrucciones
+        instructions = f"""ESCALA ACTUAL: {scale_name}
+Patrón: {pattern}
+Número de notas: {len(scale_notes)}
+
+NOTA ACTUAL: {self.current_note + 1}/{len(scale_notes)} - {note_names[scale_notes[self.current_note] % 12]}
+
+CONTROLES:
+• ESPACIO: Tocar nota actual
+• D o FLECHA DER →: Siguiente nota
+• A o FLECHA IZQ ←: Nota anterior
+• R: Auto-reproducir escala completa
+• N: Siguiente escala
+• P: Escala anterior
+• ESC/Q: Salir
+
+NOTAS DE LA ESCALA:
+"""
         for i, semitone in enumerate(scale_notes):
-            note_name = note_names[semitone % 12]
-            color = (100, 255, 100) if i == self.current_note else (200, 200, 200)
-            
-            cv2.putText(frame, note_name, (x_start + i * 60, y),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2, cv2.LINE_AA)
-    
-    def _draw_scale_diagram(self, frame, scale_notes, pattern):
-        """Dibuja diagrama de la escala en frame derecho"""
-        h, w = frame.shape[:2]
+            prefix = "▶ " if i == self.current_note else "  "
+            instructions += f"{prefix}{note_names[semitone % 12]}\n"
         
-        cv2.putText(frame, "Estructura:", (50, 120),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
-        
-        cv2.putText(frame, pattern, (50, 160),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (100, 255, 255), 1, cv2.LINE_AA)
-        
-        cv2.putText(frame, f"{len(scale_notes)} notas", (50, 200),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 100), 1, cv2.LINE_AA)
+        self._instructions = instructions
+        self._progress = int((self.current_scale + 1) / len(self.scales) * 100)
+        self._custom_info = f"Escala {self.current_scale + 1} de {len(self.scales)}"
     
     def handle_key(self, key, synth, octave_base=60):
         """Maneja teclas de la lección"""
@@ -108,27 +79,31 @@ class ScalesLesson(BaseLesson):
         
         elif key == 83 or key == ord('d') or key == ord('D'):  # Flecha derecha o D
             self.current_note = (self.current_note + 1) % len(scale_notes)
+            self._update_ui_state()
             print(f"Nota {self.current_note + 1}/{len(scale_notes)}")
             return True
         
         elif key == 81 or key == ord('a') or key == ord('A'):  # Flecha izquierda o A
             self.current_note = (self.current_note - 1) % len(scale_notes)
+            self._update_ui_state()
             print(f"Nota {self.current_note + 1}/{len(scale_notes)}")
             return True
         
-        elif key == ord('r') or key == ord('R'):  # Auto-reproducir (cambiado de 'a' a 'r')
+        elif key == ord('r') or key == ord('R'):  # Auto-reproducir
             self._auto_play_scale(synth, octave_base, scale_notes)
             return True
         
-        elif key == ord('n'):
+        elif key == ord('n') or key == ord('N'):
             self.current_scale = (self.current_scale + 1) % len(self.scales)
             self.current_note = 0
+            self._update_ui_state()
             print(f"Escala: {self.scales[self.current_scale][0]}")
             return True
         
-        elif key == ord('p'):
+        elif key == ord('p') or key == ord('P'):
             self.current_scale = (self.current_scale - 1) % len(self.scales)
             self.current_note = 0
+            self._update_ui_state()
             print(f"Escala: {self.scales[self.current_scale][0]}")
             return True
         

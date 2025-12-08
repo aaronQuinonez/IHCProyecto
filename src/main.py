@@ -1,64 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Sun Aug 22 15:27:37 2021
-Proyecto de Integracion: Virtual Piano Keyboard
-
-Fuentes:
-    OpenCV
-    https://opencv.org/
-
-    Clayton Darwin
-    https://www.youtube.com/watch?v=sW4CVI51jDY
-
-    Nicolai Høirup Nielsen  (The Coding Lib)
-    https://github.com/niconielsen32/ComputerVision/tree/master/StereoVisionDepthEstimation
-    https://www.youtube.com/watch?v=t3LOey68Xpg -
-
-
-    Kaustubh Sadekar - Satya Mallick
-    https://learnopencv.com/making-a-low-cost-stereo-camera-using-opencv/#steps-to-create-the-stereo-camera-setup
-
-    Fernando Souza
-    https://medium.com/vacatronics/3-ways-to-calibrate-your-camera-using-opencv-and-python-395528a51615
-
-    Daniel Lee
-    https://erget.wordpress.com/2014/02/28/calibrating-a-stereo-pair-with-python/
-    https://erget.wordpress.com/2014/02/01/calibrating-a-stereo-camera-with-opencv/
-
-
-    LearnTechWithUs
-    https://github.com/LearnTechWithUs/Stereo-Vision/issues/10
-
-    Najam R. Syed
-    https://nrsyed.com/2018/07/05/multithreading-with-opencv-python-to-improve-video-processing-performance/
-
-    Murtaza's Workshop - Robotics and AI
-    https://www.youtube.com/watch?v=NZde8Xt78Iw
-
-    Google -Mediapipe
-    https://ai.googleblog.com/2019/08/on-device-real-time-hand-tracking-with.html
-
-
-    Nathan Whitehead
-    https://github.com/nwhitehead/pyfluidsynth
-
-    y otros
-
-    Referencias:
-    Python
-    https://www.python.org/dev/peps/pep-0008/#package-and-module-names
-
-
-# TODOES:
-# TODO1: Crear una cola (queue) para estabilizar con un promedio la posición xy de los dedos
-# TODO2: Calcular distancia angular para detectar cuando un dedo está bajo el umbral para tocar la tecla virtual
-# TODO3: Incluir todos los dedos al mapa de XY + Depth
-# TODO4: Mejorar performance, primera opcion GPU, y optimización
-
-@author: mherrera
-"""
-
 import time
 import traceback
 import cv2
@@ -66,6 +7,7 @@ import numpy as np
 import fluidsynth
 from collections import deque
 import sys
+import os
 
 # --- Vision ---
 from src.vision import video_thread, angles
@@ -90,9 +32,11 @@ from src.gameplay.song_chart import TUTORIAL_FACIL
 from src.ui.ui_helper import UIHelper
 #from src.ui.qt_initial_menu import show_initial_menu
 from src.ui.qt_main_menu import show_main_menu
+from src.ui.qt_theory_menu import show_theory_menu
+from src.ui.qt_lesson_window import show_lesson_window
 
 # --- Theory ---
-from src.theory import get_lesson_manager, TheoryUI
+from src.theory import get_lesson_manager
 # --- Songs ---
 from src.songs.sons_ui import SongsUI
 from src.songs.song_manager import get_all_songs
@@ -751,26 +695,47 @@ def main():
             start_mode = show_main_menu()   # "rhythm", "free", "theory", "config", "exit"
             print(f"--- DEBUG: Modo seleccionado: {start_mode} ---")
             
-            # Detectar si es una opción de teoría
+            # Inicializar lesson_manager y variables de teoría
+            lesson_manager_instance = get_lesson_manager()
+            theory_mode = False
+            in_lesson = False
+            current_lesson = None
+            
+            # Manejar selección de teoría con menú PyQt6
             if start_mode and start_mode.startswith("theory_"):
-                theory_mode = True
-                game_mode = False
-                
-                # 1. Extraer el ID de la lección (ej: 'theory_chords' -> 'chords')
+                # Si viene desde el menú principal con lección específica
                 target_lesson_id = start_mode.replace("theory_", "")
-                
-                # 2. Buscar y cargar la lección
-                lesson = lesson_manager.get_lesson(target_lesson_id)
+                lesson = lesson_manager_instance.get_lesson(target_lesson_id)
                 
                 if lesson:
                     current_lesson = lesson
                     current_lesson.start()
                     in_lesson = True
+                    theory_mode = True
                     print(f"✓ Modo TEORÍA iniciado: Lección '{lesson.name}'")
                 else:
-                    print(f"⚠ Lección '{target_lesson_id}' no encontrada. Mostrando menú.")
-                    theory_ui.reset_selection()
-
+                    print(f"⚠ Lección '{target_lesson_id}' no encontrada.")
+            
+            # Si solo se seleccionó "theory" sin lección específica, mostrar menú PyQt6
+            elif start_mode == "theory":
+                lessons = lesson_manager_instance.get_all_lessons()
+                
+                if lessons:
+                    selected_lesson_id = show_theory_menu(lessons)
+                    
+                    if selected_lesson_id:
+                        lesson = lesson_manager_instance.get_lesson(selected_lesson_id)
+                        if lesson:
+                            current_lesson = lesson
+                            current_lesson.start()
+                            in_lesson = True
+                            theory_mode = True
+                            print(f"✓ Lección seleccionada: '{lesson.name}'")
+                    else:
+                        print("Regresando al menú principal...")
+                        continue  # Volver al inicio del loop global
+                else:
+                    print("⚠ No hay lecciones disponibles.")
             
             if start_mode is None or start_mode == "exit":
                 print("Saliendo desde el menú principal...")
@@ -949,28 +914,22 @@ def main():
             
             # Inicializar sistemas
             rhythm_game = RhythmGame(num_keys=KEYBOARD_TOT_KEYS)
-            lesson_manager = get_lesson_manager()
-            theory_ui = TheoryUI(pixel_width * 2, pixel_height)
+            lesson_manager = lesson_manager_instance  # Usar la instancia ya creada
             config_ui = ConfigUI(pixel_width * 2, pixel_height)
             km = kbm.KeyboardMap(depth_threshold=config.DEPTH_THRESHOLD)
 
-            # Variables de estado
+            # Variables de estado (algunas ya inicializadas arriba)
             game_mode = False
-            theory_mode = False
-            in_lesson = False
-            current_lesson = None
+            # theory_mode ya inicializado arriba
+            # in_lesson ya inicializado arriba
+            # current_lesson ya inicializado arriba
             config_mode = False
             songs_mode = False
             in_song = False
             current_song = None
             
-            # Inicializar módulo de teoría
-            lesson_manager = get_lesson_manager()
-            theory_ui = TheoryUI(pixel_width * 2, pixel_height)
-            theory_mode = False  # False = otros modos, True = modo teoría
-            in_lesson = False  # True cuando está dentro de una lección
-            current_lesson = None
-            current_lesson_id = None
+            # Variables de módulo de teoría (ya no necesarias, se usan las de arriba)
+            # theory_mode, in_lesson, current_lesson ya están definidos
             
             # Inicializar UI de configuración
             config_ui = ConfigUI(pixel_width * 2, pixel_height)
@@ -998,11 +957,7 @@ def main():
                 theory_mode = True
                 game_mode = False
                 
-                # Extraer ID de la lección (ej: theory_chords -> chords)
-                # Esto asume que los archivos se llaman lesson_chords.py, lesson_intervals.py, etc.
                 target_lesson_id = initial_mode.replace("theory_", "")
-                
-                # Buscar la lección en el gestor
                 lesson = lesson_manager.get_lesson(target_lesson_id)
                 
                 if lesson:
@@ -1011,8 +966,9 @@ def main():
                     in_lesson = True
                     print(f"✓ Modo TEORÍA iniciado: Lección '{lesson.name}'")
                 else:
-                    print(f"⚠ No se encontró la lección '{target_lesson_id}'. Mostrando menú general.")
-                    theory_ui.reset_selection()
+                    print(f"⚠ No se encontró la lección '{target_lesson_id}'.")
+                    # Si no se encuentra, simplemente continuar sin modo teoría
+                    theory_mode = False
 
             elif initial_mode == "config":
                 game_mode = False
@@ -1043,8 +999,30 @@ def main():
             # ------------------------------
 
             fs = fluidsynth.Synth()
-            fs.start() # Windows
-            sfid = fs.sfload(r"C:\Users\MI PC\OneDrive\Desktop\fluid\FluidR3_GM.sf2")
+            fs.start(driver='dsound')  # Windows - driver explícito
+            
+            # Buscar SoundFont en múltiples ubicaciones
+            soundfont_paths = [
+                r"C:\CodingWindows\IHCProyecto\utils\fluid\FluidR3_GM.sf2",
+                r"C:\Users\MI PC\OneDrive\Desktop\fluid\FluidR3_GM.sf2",
+                AppConfig.get_soundfont_path()
+            ]
+            
+            sfid = None
+            for sf_path in soundfont_paths:
+                if sf_path and os.path.exists(sf_path):
+                    try:
+                        sfid = fs.sfload(sf_path)
+                        print(f"✓ SoundFont cargado desde: {sf_path}")
+                        break
+                    except Exception as e:
+                        print(f"⚠ Error cargando {sf_path}: {e}")
+            
+            if sfid is None:
+                print("❌ ERROR: No se encontró el archivo SoundFont (.sf2)")
+                print("   Descarga FluidR3_GM.sf2 y colócalo en:")
+                print("   C:\\CodingWindows\\IHCProyecto\\utils\\fluid\\FluidR3_GM.sf2")
+                raise FileNotFoundError("SoundFont no encontrado")
 
 
             # 000-000 Yamaha Grand Piano
@@ -1306,68 +1284,28 @@ def main():
                 ui_helper.update()
                 
                 # === MODO TEORÍA (LECCIONES) ===
-                if theory_mode:
-                    # A. Si hay una lección activa, ejecutarla
-                    if in_lesson and current_lesson:
-                        frame_left, frame_right, continue_lesson = current_lesson.run(
-                            frame_left, frame_right, vk_left, fs,
-                            left_detector, right_detector
-                        )
-                        
-                        if not continue_lesson:
-                            current_lesson.stop()
-                            in_lesson = False
-                            current_lesson = None
-                            print("Fin de la lección.")
+                if theory_mode and in_lesson and current_lesson:
+                    # Abrir ventana PyQt6 para la lección (bloquea hasta que termine)
+                    print(f"Iniciando ventana de lección: {current_lesson.name}")
                     
-                    # Preparar frames para mostrar
-                    if camera_in_front_of_you:
-                        h_frames = np.concatenate((frame_right, frame_left), axis=1)
-                    else:
-                        h_frames = np.concatenate((frame_left, frame_right), axis=1)
-
-                    # B. Si NO hay lección activa, mostrar menú de teoría
-                    if not in_lesson:
-                        lessons = lesson_manager.get_all_lessons()
-                        h_frames = theory_ui.draw_lesson_menu(h_frames, lessons)
-
-                    cv2.imshow(main_window_name, h_frames)
+                    # Llamar a la ventana PyQt6 (esto bloquea hasta que termine la lección)
+                    lesson_completed = show_lesson_window(
+                        lesson=current_lesson,
+                        camera_left=cam_left,
+                        camera_right=cam_right,
+                        synth=fs,
+                        virtual_keyboard=vk_left,
+                        hand_detector_left=left_detector,
+                        hand_detector_right=right_detector
+                    )
                     
-                    # Control de teclas EXCLUSIVO para modo teoría
-                    key = cv2.waitKey(1) & 0xFF
-                    
-                    # Navegación del menú (Solo si no estamos en lección)
-                    if not in_lesson:
-                        if key == 82 or key == ord('w') or key == ord('W'):
-                            theory_ui.navigate_up(len(lessons))
-                        elif key == 84 or key == ord('s') or key == ord('S'):
-                            theory_ui.navigate_down(len(lessons))
-                        elif key == 13: # ENTER
-                            idx = theory_ui.get_selected_index()
-                            if 0 <= idx < len(lessons):
-                                _, lesson = lessons[idx]
-                                current_lesson = lesson
-                                current_lesson.start()
-                                in_lesson = True
-                    else:
-                        # Si estamos en lección, pasar teclas a la lección (para tocar notas, etc)
-                        current_lesson.handle_key(key, fs, octave_base)
-
-                    # Salir con Q o ESC
-                    if key == ord('q') or key == ord('Q') or key == 27:
-                        if in_lesson:
-                            current_lesson.stop()
-                            in_lesson = False
-                            current_lesson = None
-                        else:
-                            theory_mode = False
-                            print("Saliendo de modo teoría...")
-                    
-                    # IMPORTANTE: Validar cierre de ventana
-                    if cycles > 20 and cv2.getWindowProperty(main_window_name, cv2.WND_PROP_VISIBLE) < 1:
-                        break
-                        
-                    continue
+                    # Cuando la ventana se cierre, limpiar estado
+                    current_lesson.stop()
+                    in_lesson = False
+                    current_lesson = None
+                    theory_mode = False
+                    print("Lección terminada. Regresando al menú principal...")
+                    break  # Salir del loop de OpenCV para volver al menú principal
                 # === MODO CONFIGURACIÓN ===
                 if config_mode:
                     # Mostrar panel de configuración

@@ -37,7 +37,7 @@ class MainMenuDialog(QDialog):
                 font-size: 52px;
             }
             QLabel#subtitle {
-                color: #ffcc00;
+                color: #16c79a;
                 font-size: 28px;
                 font-weight: bold;
                 margin-bottom: 10px;
@@ -52,10 +52,10 @@ class MainMenuDialog(QDialog):
                 text-align: left;
             }
             QPushButton:hover {
-                color: #ffe082;
+                color: #16c79a;
             }
             QPushButton:pressed {
-                color: #fff59d;
+                color: #1dd3af;
             }
         """)
 

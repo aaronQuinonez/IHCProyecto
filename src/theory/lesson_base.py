@@ -25,24 +25,37 @@ class BaseLesson(ABC):
         self.description = "Sin descripción"
         self.difficulty = "Básico"
         self.running = False
-    
-    @abstractmethod
-    def run(self, frame_left, frame_right, virtual_keyboard, synth, hand_detector_left=None, hand_detector_right=None):
-        """
-        Ejecuta la lección. Debe devolver:
-        - frame_left, frame_right modificados (con UI de la lección)
-        - continue_lesson: bool (True = continuar, False = salir de la lección)
         
-        Args:
-            frame_left: Frame de cámara izquierda
-            frame_right: Frame de cámara derecha
-            virtual_keyboard: Instancia de VirtualKeyboard
-            synth: Instancia de FluidSynth
-            hand_detector_left: Detector de manos izquierdo (opcional)
-            hand_detector_right: Detector de manos derecho (opcional)
+        # Datos de estado para PyQt6
+        self._instructions = ""
+        self._progress = 0
+        self._custom_info = ""
+    
+    def get_lesson_state(self):
+        """
+        Devuelve el estado actual de la lección para PyQt6
         
         Returns:
-            tuple: (frame_left, frame_right, continue_lesson)
+            dict: Diccionario con 'instructions', 'progress', 'custom_info'
+        """
+        return {
+            'instructions': self._instructions,
+            'progress': self._progress,
+            'custom_info': self._custom_info
+        }
+    
+    @abstractmethod
+    def handle_key(self, key, synth, octave_base=60):
+        """
+        Maneja teclas presionadas durante la lección
+        
+        Args:
+            key: Código de tecla (ord('a'), ord(' '), etc)
+            synth: Instancia de FluidSynth
+            octave_base: Nota MIDI base
+        
+        Returns:
+            bool: True si se manejó la tecla
         """
         pass
     
