@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QImage, QPixmap, QFont
+from src.piano.keyboard_processor import KeyboardProcessor
 
 
 class LessonWindow(QMainWindow):
@@ -24,7 +25,9 @@ class LessonWindow(QMainWindow):
     """
     
     def __init__(self, lesson, camera_left, camera_right, synth, 
-                 virtual_keyboard, hand_detector_left=None, hand_detector_right=None):
+                 virtual_keyboard, hand_detector_left=None, hand_detector_right=None,
+                 keyboard_mapper=None, angler=None, depth_estimator=None, octave_base=60,
+                 keyboard_total_keys=24, camera_separation=9.07):
         super().__init__()
         
         self.lesson = lesson
@@ -34,6 +37,20 @@ class LessonWindow(QMainWindow):
         self.virtual_keyboard = virtual_keyboard
         self.hand_detector_left = hand_detector_left
         self.hand_detector_right = hand_detector_right
+        
+        # Crear procesador de teclado centralizado
+        if keyboard_mapper and angler:
+            self.keyboard_processor = KeyboardProcessor(
+                keyboard_mapper=keyboard_mapper,
+                angler=angler,
+                depth_estimator=depth_estimator,
+                synth=synth,
+                octave_base=octave_base,
+                keyboard_total_keys=keyboard_total_keys,
+                camera_separation=camera_separation
+            )
+        else:
+            self.keyboard_processor = None
         
         self.continue_lesson = True
         self.timer = QTimer()
@@ -239,21 +256,22 @@ class LessonWindow(QMainWindow):
         if frame_left is None or frame_right is None:
             return
         
-        # Procesar detección de manos si está disponible
-        if self.hand_detector_left and self.hand_detector_right:
+        # Procesar teclado virtual con el procesador centralizado
+        if self.keyboard_processor and self.hand_detector_left and self.hand_detector_right:
             try:
-                # Detectar manos
-                results_left = self.hand_detector_left.process(frame_left)
-                results_right = self.hand_detector_right.process(frame_right)
-                
-                # Procesar contactos con el teclado virtual
-                if results_left.multi_hand_landmarks and results_right.multi_hand_landmarks:
-                    if self.virtual_keyboard:
-                        # Aquí se procesarían los contactos pero no dibujamos en frames
-                        # Solo necesitamos detectar si hay interacción
-                        pass
+                frame_left, frame_right = self.keyboard_processor.process_and_play(
+                    frame_left=frame_left,
+                    frame_right=frame_right,
+                    virtual_keyboard=self.virtual_keyboard,
+                    hand_detector_left=self.hand_detector_left,
+                    hand_detector_right=self.hand_detector_right,
+                    game_mode=False,
+                    rhythm_game=None
+                )
             except Exception as e:
-                print(f"Error procesando manos: {e}")
+                print(f"Error procesando teclado: {e}")
+                import traceback
+                traceback.print_exc()
         
         # Ejecutar lógica de la lección (sin dibujar en frames)
         # La lección debe actualizar su estado interno
@@ -355,7 +373,9 @@ class LessonWindow(QMainWindow):
 
 
 def show_lesson_window(lesson, camera_left, camera_right, synth, 
-                      virtual_keyboard, hand_detector_left=None, hand_detector_right=None):
+                      virtual_keyboard, hand_detector_left=None, hand_detector_right=None,
+                      keyboard_mapper=None, angler=None, depth_estimator=None,
+                      octave_base=60, keyboard_total_keys=24, camera_separation=9.07):
     """
     Muestra la ventana de lección y bloquea hasta que termine
     
@@ -369,7 +389,9 @@ def show_lesson_window(lesson, camera_left, camera_right, synth,
         owns_app = True
     
     window = LessonWindow(lesson, camera_left, camera_right, synth,
-                         virtual_keyboard, hand_detector_left, hand_detector_right)
+                         virtual_keyboard, hand_detector_left, hand_detector_right,
+                         keyboard_mapper, angler, depth_estimator, octave_base,
+                         keyboard_total_keys, camera_separation)
     window.show()
     
     # Ejecutar hasta que se cierre la ventana

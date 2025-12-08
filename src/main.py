@@ -989,7 +989,9 @@ def main():
                         current_song = songs_dict[selected_song_name]
                         print(f"✓ Iniciando canción: {current_song.name}")
                         show_song_window(current_song, cam_left, cam_right, fs, vk_left,
-                                       left_detector, right_detector)
+                                       left_detector, right_detector, km, angler, 
+                                       depth_estimator, octave_base, KEYBOARD_TOT_KEYS,
+                                       camera_separation)
                         print("✓ Canción finalizada")
                     else:
                         print("No se seleccionó canción")
@@ -1009,7 +1011,9 @@ def main():
                         current_song = songs_dict[selected_song_name]
                         print(f"✓ Iniciando canción: {current_song.name}")
                         show_song_window(current_song, cam_left, cam_right, fs, vk_left,
-                                       left_detector, right_detector)
+                                       left_detector, right_detector, km, angler, 
+                                       depth_estimator, octave_base, KEYBOARD_TOT_KEYS,
+                                       camera_separation)
                         print("✓ Canción finalizada")
                     else:
                         print("No se seleccionó canción")
@@ -1305,7 +1309,13 @@ def main():
                         synth=fs,
                         virtual_keyboard=vk_left,
                         hand_detector_left=left_detector,
-                        hand_detector_right=right_detector
+                        hand_detector_right=right_detector,
+                        keyboard_mapper=km,
+                        angler=angler,
+                        depth_estimator=depth_estimator,
+                        octave_base=octave_base,
+                        keyboard_total_keys=KEYBOARD_TOT_KEYS,
+                        camera_separation=camera_separation
                     )
                     
                     # Cuando la ventana se cierre, limpiar estado
