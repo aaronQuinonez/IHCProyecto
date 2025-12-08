@@ -34,11 +34,12 @@ from src.ui.ui_helper import UIHelper
 from src.ui.qt_main_menu import show_main_menu
 from src.ui.qt_theory_menu import show_theory_menu
 from src.ui.qt_lesson_window import show_lesson_window
+from src.ui.qt_songs_menu import show_songs_menu
+from src.ui.qt_song_window import show_song_window
 
 # --- Theory ---
 from src.theory import get_lesson_manager
 # --- Songs ---
-from src.songs.sons_ui import SongsUI
 from src.songs.song_manager import get_all_songs
 
 # --- Config UI ---
@@ -917,6 +918,51 @@ def main():
             lesson_manager = lesson_manager_instance  # Usar la instancia ya creada
             config_ui = ConfigUI(pixel_width * 2, pixel_height)
             km = kbm.KeyboardMap(depth_threshold=config.DEPTH_THRESHOLD)
+            
+            # Inicializar detectores de manos
+            left_detector = HandDetector(staticImageMode=False,
+                                        detectionCon=config.HAND_DETECTION_CONFIDENCE,
+                                        trackCon=config.HAND_TRACKING_CONFIDENCE)
+            right_detector = HandDetector(staticImageMode=False,
+                                         detectionCon=config.HAND_DETECTION_CONFIDENCE,
+                                         trackCon=config.HAND_TRACKING_CONFIDENCE)
+            
+            # Inicializar ángulos
+            angler = angles.Frame_Angles(pixel_width, pixel_height, angle_width,
+                                        angle_height)
+            angler.build_frame()
+            
+            # Inicializar sintetizador
+            fs = fluidsynth.Synth()
+            fs.start(driver='dsound')  # Windows - driver explícito
+            
+            # Buscar SoundFont en múltiples ubicaciones
+            soundfont_paths = [
+                r"C:\CodingWindows\IHCProyecto\utils\fluid\FluidR3_GM.sf2",
+                r"C:\Users\MI PC\OneDrive\Desktop\fluid\FluidR3_GM.sf2",
+                AppConfig.get_soundfont_path()
+            ]
+            
+            sfid = None
+            for sf_path in soundfont_paths:
+                if sf_path and os.path.exists(sf_path):
+                    try:
+                        sfid = fs.sfload(sf_path)
+                        print(f"✓ SoundFont cargado desde: {sf_path}")
+                        break
+                    except Exception as e:
+                        print(f"⚠ Error cargando {sf_path}: {e}")
+            
+            if sfid is None:
+                print("❌ ERROR: No se encontró el archivo SoundFont (.sf2)")
+                print("   Descarga FluidR3_GM.sf2 y colócalo en:")
+                for path in soundfont_paths[:2]:
+                    print(f"   - {path}")
+                cam_left.stop()
+                cam_right.stop()
+                sys.exit(1)
+            
+            fs.program_select(0, sfid, 0, 0)  # Canal 0, banco 0, preset 0 (piano)
 
             # Variables de estado (algunas ya inicializadas arriba)
             game_mode = False
@@ -924,9 +970,6 @@ def main():
             # in_lesson ya inicializado arriba
             # current_lesson ya inicializado arriba
             config_mode = False
-            songs_mode = False
-            in_song = False
-            current_song = None
             
             # Variables de módulo de teoría (ya no necesarias, se usan las de arriba)
             # theory_mode, in_lesson, current_lesson ya están definidos
@@ -938,15 +981,44 @@ def main():
             # ACTIVAR MODO INICIAL
 
             if initial_mode == "rhythm":
-                game_mode = True
-                theory_mode = False
-                print("Modo JUEGO DE RITMO iniciado desde el menú principal.")
-                rhythm_game.start_game(TUTORIAL_FACIL)
+                # Modo ritmo ahora muestra el menú de canciones con PyQt6
+                songs_dict = get_all_songs()
+                if songs_dict:
+                    selected_song_name = show_songs_menu(songs_dict)
+                    if selected_song_name and selected_song_name in songs_dict:
+                        current_song = songs_dict[selected_song_name]
+                        print(f"✓ Iniciando canción: {current_song.name}")
+                        show_song_window(current_song, cam_left, cam_right, fs, vk_left,
+                                       left_detector, right_detector)
+                        print("✓ Canción finalizada")
+                    else:
+                        print("No se seleccionó canción")
+                else:
+                    print("❌ No hay canciones disponibles")
+                
+                # Volver al menú principal
+                initial_mode = show_main_menu()
+                continue
 
-            elif initial_mode == "songs":  # <--- ESTO FALTABA
-                songs_mode = True
-                game_mode = False
-                theory_mode = False
+            elif initial_mode == "songs":
+                # Modo songs ahora con PyQt6
+                songs_dict = get_all_songs()
+                if songs_dict:
+                    selected_song_name = show_songs_menu(songs_dict)
+                    if selected_song_name and selected_song_name in songs_dict:
+                        current_song = songs_dict[selected_song_name]
+                        print(f"✓ Iniciando canción: {current_song.name}")
+                        show_song_window(current_song, cam_left, cam_right, fs, vk_left,
+                                       left_detector, right_detector)
+                        print("✓ Canción finalizada")
+                    else:
+                        print("No se seleccionó canción")
+                else:
+                    print("❌ No hay canciones disponibles")
+                
+                # Volver al menú principal
+                initial_mode = show_main_menu()
+                continue
             
             elif initial_mode == "free":
                 game_mode = False
@@ -973,69 +1045,6 @@ def main():
             elif initial_mode == "config":
                 game_mode = False
                 print("Configuración terminada. Iniciando en modo libre.")
-
-            # ------------------------------
-            # set up keyboards map
-            # -----------------------------
-            km = kbm.KeyboardMap(depth_threshold=config.DEPTH_THRESHOLD)
-
-            # ------------------------------
-            # set up angles
-            # ------------------------------
-            # cameras are the same, so only 1 needed
-            angler = angles.Frame_Angles(pixel_width, pixel_height, angle_width,
-                                        angle_height)
-            angler.build_frame()
-
-            left_detector = HandDetector(staticImageMode=False,
-                                                    detectionCon=config.HAND_DETECTION_CONFIDENCE,
-                                                    trackCon=config.HAND_TRACKING_CONFIDENCE)
-            right_detector = HandDetector(staticImageMode=False,
-                                                    detectionCon=config.HAND_DETECTION_CONFIDENCE,
-                                                    trackCon=config.HAND_TRACKING_CONFIDENCE)
-
-            # ------------------------------
-            # set up synth
-            # ------------------------------
-
-            fs = fluidsynth.Synth()
-            fs.start(driver='dsound')  # Windows - driver explícito
-            
-            # Buscar SoundFont en múltiples ubicaciones
-            soundfont_paths = [
-                r"C:\CodingWindows\IHCProyecto\utils\fluid\FluidR3_GM.sf2",
-                r"C:\Users\MI PC\OneDrive\Desktop\fluid\FluidR3_GM.sf2",
-                AppConfig.get_soundfont_path()
-            ]
-            
-            sfid = None
-            for sf_path in soundfont_paths:
-                if sf_path and os.path.exists(sf_path):
-                    try:
-                        sfid = fs.sfload(sf_path)
-                        print(f"✓ SoundFont cargado desde: {sf_path}")
-                        break
-                    except Exception as e:
-                        print(f"⚠ Error cargando {sf_path}: {e}")
-            
-            if sfid is None:
-                print("❌ ERROR: No se encontró el archivo SoundFont (.sf2)")
-                print("   Descarga FluidR3_GM.sf2 y colócalo en:")
-                print("   C:\\CodingWindows\\IHCProyecto\\utils\\fluid\\FluidR3_GM.sf2")
-                raise FileNotFoundError("SoundFont no encontrado")
-
-
-            # 000-000 Yamaha Grand Piano
-            fs.program_select(chan=0, sfid=sfid, bank=0, preset=0)
-
-            # # 008-014 Church Bell
-            # fs.program_select(chan=0, sfid=sfid, bank=8, preset=14)
-            # # 008-026 Hawaiian Guitar
-            # fs.program_select(chan=0, sfid=sfid, bank=8, preset=26)
-            # # Standard
-            # fs.program_select(chan=0, sfid=sfid, bank=128, preset=0)
-            # # 000-103 Star Theme
-            # fs.program_select(chan=0, sfid=sfid, bank=0, preset=103)
 
             # ------------------------------
             # stabilize
@@ -1363,85 +1372,6 @@ def main():
                         print("Modo configuración desactivado")
                     
                     continue  # Saltar el resto del loop principal
-
-                # === MODO CANCIONES (RHYTH GAME CON MENU) ===
-                if songs_mode:
-                    if in_song and current_song:
-                        # Ejecutar canción activa
-                        try:
-                            frame_left, frame_right, continue_song = current_song.run(
-                                frame_left, frame_right, vk_left, fs,
-                                left_detector, right_detector
-                            )
-                            
-                            if not continue_song:
-                                # Salir de la canción
-                                current_song.stop()
-                                in_song = False
-                                current_song = None
-                                print("Saliendo de la canción...")
-                        except Exception as e:
-                            print(f"Error durante la canción: {e}")
-                            in_song = False
-                            current_song = None
-                    else:
-                        # Mostrar menú de canciones
-                        songs_dict = get_all_songs()
-                        if camera_in_front_of_you:
-                            h_frames = np.concatenate((frame_right, frame_left), axis=1)
-                        else:
-                            h_frames = np.concatenate((frame_left, frame_right), axis=1)
-                        
-                        h_frames = songs_ui.draw_song_menu(h_frames, songs_dict)
-                        cv2.imshow(main_window_name, h_frames)
-                        
-                        # Manejar teclas del menú (SIN hacer otro waitKey aquí)
-                        # Flecha arriba o W
-                        if key == 82 or key == ord('w') or key == ord('W'):
-                            songs_ui.navigate(-1, len(songs_dict))
-                            print(f"Navegando canción: {songs_ui.get_selected_index() + 1}/{len(songs_dict)}")
-                        # Flecha abajo o S
-                        elif key == 84 or key == ord('s') or key == ord('S'):
-                            songs_ui.navigate(1, len(songs_dict))
-                            print(f"Navegando canción: {songs_ui.get_selected_index() + 1}/{len(songs_dict)}")
-                        # Números 1-9 para selección directa
-                        elif 49 <= key <= 57:  # Teclas 1-9
-                            selected_idx = key - 49  # Convertir a índice (0-8)
-                            if 0 <= selected_idx < len(songs_dict):
-                                songs_list = list(songs_dict.values())
-                                current_song = songs_list[selected_idx]
-                                try:
-                                    current_song.start()
-                                    in_song = True
-                                    print(f"Iniciando canción: {current_song.name}")
-                                except Exception as e:
-                                    print(f"Error al iniciar canción: {e}")
-                        # ENTER
-                        elif key == 13:  # ENTER
-                            selected_idx = songs_ui.get_selected_index()
-                            songs_list = list(songs_dict.values())
-                            if 0 <= selected_idx < len(songs_list):
-                                current_song = songs_list[selected_idx]
-                                try:
-                                    current_song.start()
-                                    in_song = True
-                                    print(f"Iniciando canción: {current_song.name}")
-                                except Exception as e:
-                                    print(f"Error al iniciar canción: {e}")
-                    
-                    # Teclas globales que funcionan en songs_mode
-                    if key == ord('q') or key == ord('Q') or key == 27:  # Q, q o ESC
-                        songs_mode = False
-                        game_mode = False
-                        theory_mode = False
-                        songs_ui.reset_selection()
-                        if in_song and current_song:
-                            current_song.stop()
-                            in_song = False
-                            current_song = None
-                        print("Volviendo al modo libre...")
-                    
-                    continue  # Saltar el resto del loop principal (sin duplicar waitKey)
 
                 # Combinar frames antes de procesar UI
                 if camera_in_front_of_you:
