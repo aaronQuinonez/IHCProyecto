@@ -291,8 +291,12 @@ class LessonWindow(QMainWindow):
         except Exception as e:
             print(f"Error ejecutando lección: {e}")
         
-        # Concatenar frames (sin overlays)
-        h_frames = np.concatenate((frame_left, frame_right), axis=1)
+        # Aplicar flip horizontal para corregir efecto espejo
+        frame_left = cv2.flip(frame_left, 1)
+        frame_right = cv2.flip(frame_right, 1)
+        
+        # Concatenar frames en orden correcto (derecha primero, izquierda después)
+        h_frames = np.concatenate((frame_right, frame_left), axis=1)
         
         # Convertir a QPixmap y mostrar
         self._display_frame(h_frames)
