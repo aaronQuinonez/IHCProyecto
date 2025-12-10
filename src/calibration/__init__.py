@@ -7,17 +7,16 @@ Fase 2: Calibración estéreo (8-15 pares simultáneos)
 Proceso continuo e integrado
 """
 
-from .calibration_manager_v2 import CalibrationManager
+from .qt_calibration_manager import QtCalibrationManager, run_qt_calibration
 from .camera_calibrator import CameraCalibrator
 from .stereo_calibrator import StereoCalibrator
-from .calibration_ui import CalibrationUI
 from .calibration_config import CalibrationConfig
 
 __all__ = [
-    'CalibrationManager',
+    'QtCalibrationManager',
+    'run_qt_calibration',
     'CameraCalibrator', 
     'StereoCalibrator',
-    'CalibrationUI',
     'CalibrationConfig'
 ]
 

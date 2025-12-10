@@ -1,0 +1,427 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Ventana PyQt6 para Calibración Estereoscópica
+Interfaz gráfica que muestra feeds de cámaras y guía el proceso
+"""
+
+import cv2
+import numpy as np
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+                             QLabel, QPushButton, QProgressBar, QTextEdit)
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QImage, QPixmap, QFont
+
+
+class CalibrationWindow(QMainWindow):
+    """
+    Ventana principal para calibración con PyQt6
+    Muestra feeds de cámaras y controla el proceso
+    """
+    
+    # Señales para comunicación con el manager
+    capture_requested = pyqtSignal()  # Usuario presionó capturar
+    cancel_requested = pyqtSignal()   # Usuario presionó cancelar
+    continue_requested = pyqtSignal() # Usuario presionó continuar
+    
+    def __init__(self, width=1280, height=720):
+        super().__init__()
+        self.width = width
+        self.height = height
+        
+        # Estado
+        self.current_phase = "init"  # init, config, capture_left, capture_right, stereo, depth
+        self.is_waiting_input = False
+        self.user_input = None
+        
+        self._setup_ui()
+        
+    def _setup_ui(self):
+        """Configura la interfaz de usuario"""
+        self.setWindowTitle("Calibración Estereoscópica - Piano Virtual")
+        self.setStyleSheet("background-color: #000000;")
+        
+        # Widget central
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        
+        # Layout principal
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        
+        # ========== TÍTULO ==========
+        self.title_label = QLabel("CALIBRACIÓN ESTEREOSCÓPICA")
+        self.title_label.setStyleSheet("color: #00C8FF; font-size: 24px; font-weight: bold;")
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(self.title_label)
+        
+        # ========== ÁREA DE VIDEO ==========
+        video_layout = QHBoxLayout()
+        video_layout.setSpacing(5)
+        
+        # Cámara izquierda
+        self.camera_left_label = QLabel()
+        self.camera_left_label.setStyleSheet("border: 2px solid #00C8FF; background-color: #1a1a1a;")
+        self.camera_left_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.camera_left_label.setMinimumSize(self.width // 2, self.height // 2)
+        self.camera_left_label.setScaledContents(True)
+        video_layout.addWidget(self.camera_left_label)
+        
+        # Cámara derecha
+        self.camera_right_label = QLabel()
+        self.camera_right_label.setStyleSheet("border: 2px solid #00C8FF; background-color: #1a1a1a;")
+        self.camera_right_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.camera_right_label.setMinimumSize(self.width // 2, self.height // 2)
+        self.camera_right_label.setScaledContents(True)
+        video_layout.addWidget(self.camera_right_label)
+        
+        main_layout.addLayout(video_layout)
+        
+        # ========== BARRA DE PROGRESO ==========
+        progress_layout = QVBoxLayout()
+        
+        self.progress_label = QLabel("Progreso: 0/25")
+        self.progress_label.setStyleSheet("color: #FFFFFF; font-size: 14px;")
+        progress_layout.addWidget(self.progress_label)
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 2px solid #00C8FF;
+                border-radius: 5px;
+                text-align: center;
+                background-color: #1a1a1a;
+                color: #FFFFFF;
+                font-size: 12px;
+            }
+            QProgressBar::chunk {
+                background-color: #00FF00;
+                border-radius: 3px;
+            }
+        """)
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setValue(0)
+        progress_layout.addWidget(self.progress_bar)
+        
+        main_layout.addLayout(progress_layout)
+        
+        # ========== PANEL DE INSTRUCCIONES ==========
+        self.instructions_panel = QTextEdit()
+        self.instructions_panel.setReadOnly(True)
+        self.instructions_panel.setStyleSheet("""
+            QTextEdit {
+                background-color: #1a1a1a;
+                border: 2px solid #00C8FF;
+                border-radius: 5px;
+                color: #FFFFFF;
+                font-size: 13px;
+                padding: 10px;
+            }
+        """)
+        self.instructions_panel.setMaximumHeight(150)
+        main_layout.addWidget(self.instructions_panel)
+        
+        # ========== ESTADO DE DETECCIÓN ==========
+        self.status_label = QLabel("Preparando cámaras...")
+        self.status_label.setStyleSheet("color: #FFA500; font-size: 16px; font-weight: bold;")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(self.status_label)
+        
+        # ========== BOTONES DE CONTROL ==========
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(10)
+        
+        self.capture_button = QPushButton("CAPTURAR [ESPACIO]")
+        self.capture_button.setStyleSheet("""
+            QPushButton {
+                background-color: #00FF00;
+                color: #000000;
+                font-size: 16px;
+                font-weight: bold;
+                padding: 10px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #00DD00;
+            }
+            QPushButton:disabled {
+                background-color: #555555;
+                color: #888888;
+            }
+        """)
+        self.capture_button.clicked.connect(self._on_capture_clicked)
+        self.capture_button.setEnabled(False)
+        button_layout.addWidget(self.capture_button)
+        
+        self.continue_button = QPushButton("CONTINUAR [ENTER]")
+        self.continue_button.setStyleSheet("""
+            QPushButton {
+                background-color: #00C8FF;
+                color: #000000;
+                font-size: 16px;
+                font-weight: bold;
+                padding: 10px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #00B0DD;
+            }
+            QPushButton:disabled {
+                background-color: #555555;
+                color: #888888;
+            }
+        """)
+        self.continue_button.clicked.connect(self._on_continue_clicked)
+        self.continue_button.setVisible(False)
+        button_layout.addWidget(self.continue_button)
+        
+        self.cancel_button = QPushButton("CANCELAR [ESC]")
+        self.cancel_button.setStyleSheet("""
+            QPushButton {
+                background-color: #FF0000;
+                color: #FFFFFF;
+                font-size: 16px;
+                font-weight: bold;
+                padding: 10px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #DD0000;
+            }
+        """)
+        self.cancel_button.clicked.connect(self._on_cancel_clicked)
+        button_layout.addWidget(self.cancel_button)
+        
+        main_layout.addLayout(button_layout)
+        
+        # Configurar teclas
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        
+    def keyPressEvent(self, event):
+        """Maneja eventos de teclado"""
+        key = event.key()
+        
+        # Permitir Enter para capturar también
+        if (key == Qt.Key.Key_Space or key == Qt.Key.Key_Return) and self.capture_button.isEnabled():
+            self._on_capture_clicked()
+        elif key == Qt.Key.Key_Return and self.continue_button.isVisible():
+            self._on_continue_clicked()
+        elif key == Qt.Key.Key_Escape:
+            self._on_cancel_clicked()
+    
+    def _on_capture_clicked(self):
+        """Emite señal de captura"""
+        self.capture_requested.emit()
+    
+    def _on_continue_clicked(self):
+        """Emite señal de continuar"""
+        self.continue_requested.emit()
+    
+    def _on_cancel_clicked(self):
+        """Emite señal de cancelar"""
+        self.cancel_requested.emit()
+    
+    def set_phase(self, phase_name, title=None):
+        """
+        Cambia la fase actual
+        
+        Args:
+            phase_name: Nombre de la fase (config, capture_left, capture_right, stereo, depth)
+            title: Título opcional para la ventana
+        """
+        self.current_phase = phase_name
+        if title:
+            self.title_label.setText(title)
+    
+    def update_frames(self, frame_left=None, frame_right=None):
+        """
+        Actualiza los feeds de las cámaras
+        
+        Args:
+            frame_left: Frame de cámara izquierda (BGR)
+            frame_right: Frame de cámara derecha (BGR)
+        """
+        if frame_left is not None:
+            self._display_frame(frame_left, self.camera_left_label)
+        
+        if frame_right is not None:
+            self._display_frame(frame_right, self.camera_right_label)
+    
+    def _display_frame(self, frame, label):
+        """Convierte frame OpenCV a QPixmap y lo muestra"""
+        # Convertir BGR a RGB
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # Convertir a QImage
+        h, w, ch = frame_rgb.shape
+        bytes_per_line = ch * w
+        q_image = QImage(frame_rgb.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+        
+        # Convertir a QPixmap y mostrar
+        pixmap = QPixmap.fromImage(q_image)
+        label.setPixmap(pixmap)
+    
+    def update_progress(self, current, total, text=None):
+        """
+        Actualiza la barra de progreso
+        
+        Args:
+            current: Valor actual
+            total: Valor total
+            text: Texto opcional para el label
+        """
+        if total > 0:
+            percentage = int((current / total) * 100)
+            self.progress_bar.setValue(percentage)
+        
+        if text:
+            self.progress_label.setText(text)
+        else:
+            self.progress_label.setText(f"Progreso: {current}/{total}")
+    
+    def set_instructions(self, instructions_html):
+        """
+        Actualiza el panel de instrucciones
+        
+        Args:
+            instructions_html: Texto con formato HTML
+        """
+        self.instructions_panel.setHtml(instructions_html)
+    
+    def set_status(self, status_text, color="#FFA500"):
+        """
+        Actualiza el texto de estado
+        
+        Args:
+            status_text: Texto del estado
+            color: Color en formato hex
+        """
+        self.status_label.setText(status_text)
+        self.status_label.setStyleSheet(f"color: {color}; font-size: 16px; font-weight: bold;")
+    
+    def enable_capture(self, enabled=True):
+        """Habilita/deshabilita el botón de captura"""
+        self.capture_button.setEnabled(enabled)
+    
+    def show_continue_button(self, show=True):
+        """Muestra/oculta el botón de continuar"""
+        self.continue_button.setVisible(show)
+        self.capture_button.setVisible(not show)
+    
+    def show_intro_screen(self, phase_title, instructions):
+        """
+        Muestra pantalla de introducción de una fase
+        
+        Args:
+            phase_title: Título de la fase
+            instructions: Lista de instrucciones
+        """
+        self.title_label.setText(phase_title)
+        
+        html = "<h3 style='color: #00C8FF;'>INSTRUCCIONES:</h3><ul>"
+        for instruction in instructions:
+            html += f"<li style='margin: 5px 0;'>{instruction}</li>"
+        html += "</ul>"
+        html += "<p style='color: #00FF00; margin-top: 10px;'><b>Presiona CONTINUAR o ENTER cuando estés listo</b></p>"
+        
+        self.set_instructions(html)
+        self.set_status("Esperando confirmación...", "#00C8FF")
+        self.show_continue_button(True)
+    
+    def show_capture_instructions(self, category_title, specific_instruction, objective, photo_num, total_photos):
+        """
+        Muestra instrucciones específicas para una captura
+        
+        Args:
+            category_title: Título de la categoría
+            specific_instruction: Instrucción específica
+            objective: Objetivo de esta captura
+            photo_num: Número de foto actual
+            total_photos: Total de fotos
+        """
+        html = f"<h3 style='color: #FFA500;'>{category_title}</h3>"
+        html += f"<p style='font-size: 14px; margin: 10px 0;'><b>{specific_instruction}</b></p>"
+        html += f"<p style='color: #00FF00; font-size: 12px;'><i>Objetivo: {objective}</i></p>"
+        
+        self.set_instructions(html)
+        self.update_progress(photo_num, total_photos, f"Foto {photo_num + 1} de {total_photos}")
+    
+    def show_stereo_instructions(self, pair_num, total_pairs):
+        """
+        Muestra instrucciones para captura estéreo
+        
+        Args:
+            pair_num: Número de par actual
+            total_pairs: Total de pares necesarios
+        """
+        html = "<h3 style='color: #00C8FF;'>CALIBRACIÓN ESTÉREO</h3>"
+        html += "<p><b>Coloca el tablero visible en AMBAS cámaras</b></p>"
+        html += "<ul>"
+        html += "<li>El tablero debe verse COMPLETO en ambas vistas</li>"
+        html += "<li>Varía la posición y orientación del tablero</li>"
+        html += "<li>Mantén buena iluminación</li>"
+        html += "</ul>"
+        
+        self.set_instructions(html)
+        self.update_progress(pair_num, total_pairs, f"Par {pair_num + 1} de {total_pairs}")
+    
+    def show_depth_instructions(self, target_distance, step, total_steps):
+        """
+        Muestra instrucciones para calibración de profundidad
+        
+        Args:
+            target_distance: Distancia objetivo en cm
+            step: Paso actual
+            total_steps: Total de pasos
+        """
+        html = "<h3 style='color: #00FF00;'>CALIBRACIÓN DE PROFUNDIDAD</h3>"
+        html += f"<p style='font-size: 16px; margin: 10px 0;'><b>Coloca tu DEDO ÍNDICE a {target_distance} cm de la cámara</b></p>"
+        html += "<ul>"
+        html += "<li>Usa una regla para medir la distancia exacta</li>"
+        html += "<li>Mantén el dedo quieto</li>"
+        html += "<li>Presiona CAPTURAR cuando esté en posición</li>"
+        html += "</ul>"
+        
+        self.set_instructions(html)
+        self.update_progress(step, total_steps, f"Medición {step + 1} de {total_steps}")
+    
+    def show_summary_screen(self, summary_data):
+        """
+        Muestra pantalla de resumen con resultados
+        
+        Args:
+            summary_data: Diccionario con resultados de calibración
+        """
+        self.title_label.setText("✓ CALIBRACIÓN COMPLETADA")
+        
+        html = "<h3 style='color: #00FF00;'>RESULTADOS:</h3>"
+        html += "<table style='width: 100%; color: #FFFFFF;'>"
+        
+        if 'board_config' in summary_data:
+            html += f"<tr><td><b>Configuración:</b></td><td>{summary_data['board_config']}</td></tr>"
+        
+        if 'left_error' in summary_data:
+            html += f"<tr><td><b>Error cámara izquierda:</b></td><td>{summary_data['left_error']:.6f} px</td></tr>"
+        
+        if 'right_error' in summary_data:
+            html += f"<tr><td><b>Error cámara derecha:</b></td><td>{summary_data['right_error']:.6f} px</td></tr>"
+        
+        if 'stereo_error' in summary_data:
+            html += f"<tr><td><b>Error estéreo:</b></td><td>{summary_data['stereo_error']:.6f}</td></tr>"
+        
+        if 'baseline' in summary_data:
+            html += f"<tr><td><b>Baseline:</b></td><td>{summary_data['baseline']:.2f} cm</td></tr>"
+        
+        if 'correction_factor' in summary_data:
+            html += f"<tr><td><b>Factor de corrección:</b></td><td>{summary_data['correction_factor']:.4f}</td></tr>"
+        
+        html += "</table>"
+        html += "<p style='color: #00FF00; margin-top: 20px;'><b>¡Calibración guardada exitosamente!</b></p>"
+        html += "<p style='color: #AAAAAA; font-size: 12px;'>Presiona CONTINUAR o ENTER para finalizar</p>"
+        
+        self.set_instructions(html)
+        self.set_status("✓ Proceso completado", "#00FF00")
+        self.show_continue_button(True)
+        self.progress_bar.setValue(100)

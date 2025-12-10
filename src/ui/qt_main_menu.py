@@ -178,8 +178,8 @@ class MainMenuDialog(QDialog):
         self._btn_c2.clicked.connect(lambda: self._select("config_new"))
         self.layout_config.addWidget(self._btn_c2)
 
-        self._btn_c3 = QPushButton("   3 - SALTAR (DEFAULT)")
-        self._btn_c3.clicked.connect(lambda: self._select("config_skip"))
+        self._btn_c3 = QPushButton("   3 - VER DATOS ACTUALES")
+        self._btn_c3.clicked.connect(lambda: self._select("config_view"))
         self.layout_config.addWidget(self._btn_c3)
         
         self.layout_config.addSpacing(20)

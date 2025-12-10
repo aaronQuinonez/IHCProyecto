@@ -17,8 +17,9 @@ from src.vision import load_depth_estimator
 from src.vision.stereo_config import StereoConfig
 
 # --- Calibration ---
-from src.calibration import CalibrationManager
+from src.calibration import run_qt_calibration
 from src.calibration.calibration_config import CalibrationConfig
+from src.calibration.qt_calibration_summary import show_calibration_summary, CalibrationSummaryDialog
 
 # --- Piano ---
 from src.piano import virtual_keyboard as vkb
@@ -63,16 +64,17 @@ def frame_add_crosshairs(frame, x, y, r=20, lc=(0, 0, 255), cc=(0, 0, 255), lw=2
 def show_calibration_menu(ui_helper, pixel_width, pixel_height):
     return show_initial_menu()
 
-def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
+def run_calibration_process(ui_helper, pixel_width, pixel_height, config, force_recalibration=False):
     """Ejecuta el proceso de calibración con el nuevo sistema profesional"""
     from src.calibration.calibration_config import CalibrationConfig
+    from src.calibration.qt_calibration_summary import CalibrationSummaryDialog, show_calibration_summary
     
     try:
         # ========== VERIFICAR QUÉ FASES ESTÁN COMPLETAS ==========
         has_phase1 = False
         has_phase2 = False
         summary = None
-        force_recalibration = False  # Flag para forzar re-calibración
+        # force_recalibration ya viene como argumento
         recalibrate_phase2_only = False  # Flag para re-calibrar solo Fase 2
         
         if CalibrationConfig.calibration_exists():
@@ -89,28 +91,23 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
         
         # ========== CASO 1: AMBAS FASES COMPLETAS ==========
         if has_phase1 and has_phase2 and not force_recalibration:
-            # Mostrar interfaz detallada de calibración completa
-            window_name = 'Calibracion Completa - Detalles'
-            cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-            cv2.resizeWindow(window_name, 950, 700)
-            cv2.moveWindow(window_name, 100, 50)
+            # Mostrar interfaz PyQt6
+            action = show_calibration_summary(summary)
             
-            info_frame = np.zeros((700, 950, 3), dtype=np.uint8)
+            if action == CalibrationSummaryDialog.ACTION_START:
+                print("\n✓ Usando calibración existente - Iniciando juego...")
+                return True
+            elif action == CalibrationSummaryDialog.ACTION_RECALIBRATE_ALL:
+                print("\n✓ Iniciando recalibración...")
+                success = run_qt_calibration(cam_left_id=config.cam_left_id, cam_right_id=config.cam_right_id)
+                return success
+                    
+            else: # EXIT
+                return False
             
-            while True:
-                display_frame = info_frame.copy()
-                
-                # ============ ENCABEZADO ============
-                cv2.rectangle(display_frame, (0, 0), (950, 100), (40, 80, 40), -1)
-                cv2.rectangle(display_frame, (0, 0), (950, 100), (0, 255, 0), 3)
-                
-                cv2.putText(display_frame, "CALIBRACION COMPLETA", 
-                           (250, 45),
-                           cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 3)
-                
-                cv2.putText(display_frame, f"Fecha: {summary['fecha']}    Version: {summary.get('version', '2.0')}", 
-                           (180, 75),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 255, 200), 1)
+            # OLD CODE DISABLED
+            if False:
+                pass
                 
                 # ============ SECCIÓN FASE 1 ============
                 y_pos = 120
@@ -338,7 +335,7 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
                     force_recalibration = True
                     recalibrate_phase2_only = True
                     has_phase2 = False  # ← CRUCIAL: Marcar que NO hay Fase 2
-                    break  # Salir del while para continuar con calibración
+                    pass  # Salir del while para continuar con calibración
                 
                 elif key == ord('r') or key == ord('R'):  # Re-calibrar TODO
                     cv2.destroyWindow(window_name)
@@ -346,15 +343,14 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
                     print("  (Fase 1 + Fase 2 desde cero)")
                     force_recalibration = True
                     recalibrate_phase2_only = False
-                    break  # Salir del while para continuar con calibración
+                    pass  # Salir del while para continuar con calibración
                 
                 elif key == 27:  # ESC
                     cv2.destroyWindow(window_name)
                     return False
         
-        # ========== EJECUTAR CALIBRACIÓN SI ES NECESARIO ==========
-        # Solo si: no hay fase 1, no hay fase 2, o se forzó re-calibración
-        if not has_phase1 or not has_phase2 or force_recalibration:
+        # DUPLICATE BLOCK DISABLED
+        if False and (not has_phase1 or not has_phase2 or force_recalibration):
             # Mostrar interfaz detallada de calibración completa
             window_name = 'Calibracion Completa - Detalles'
             cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
@@ -598,17 +594,13 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
                 print("💡 TIP: Captura 15 pares y mantén tablero INMÓVIL")
                 print("="*70 + "\n")
                 
-                from src.calibration.calibration_manager_v2 import CalibrationManager
+                from src.calibration import run_qt_calibration
                 
-                # Crear gestor (detectará automáticamente Fase 1 completa del JSON)
-                calibration_manager = CalibrationManager(
+                # Ejecutar calibración con PyQt6
+                success = run_qt_calibration(
                     cam_left_id=config.LEFT_CAMERA_SOURCE,
-                    cam_right_id=config.RIGHT_CAMERA_SOURCE,
-                    resolution=(pixel_width, pixel_height)
+                    cam_right_id=config.RIGHT_CAMERA_SOURCE
                 )
-                
-                # Ejecutar calibración (detectará Fase 1 completa y ejecutará SOLO Fase 2)
-                success = calibration_manager.run_full_calibration()
                 
                 if not success:
                     print("✗ Re-calibración de Fase 2 fallida o cancelada")
@@ -623,7 +615,7 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
                 
                 # NO RETORNAR - Continuar para que el usuario vea el mensaje
                 # El usuario debe presionar una tecla para continuar
-                input("\nPresiona ENTER para cerrar...")
+                # input("\nPresiona ENTER para cerrar...")
                 
                 return True
             
@@ -645,17 +637,13 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config):
             
             # Importar el manager v2 (si no se hizo antes)
             if not recalibrate_phase2_only:
-                from src.calibration.calibration_manager_v2 import CalibrationManager
+                from src.calibration import run_qt_calibration
                 
-                # Crear gestor de calibración
-                calibration_manager = CalibrationManager(
+                # Ejecutar calibración con PyQt6
+                success = run_qt_calibration(
                     cam_left_id=config.LEFT_CAMERA_SOURCE,
-                    cam_right_id=config.RIGHT_CAMERA_SOURCE,
-                    resolution=(pixel_width, pixel_height)
+                    cam_right_id=config.RIGHT_CAMERA_SOURCE
                 )
-                
-                # Ejecutar calibración (inteligente: salta fases ya completadas)
-                success = calibration_manager.run_full_calibration()
                 
                 if not success:
                     print("✗ Calibración fallida o cancelada")
@@ -749,16 +737,49 @@ def main():
             if start_mode == "config_load":
                 print("Cargando calibración guardada...")
                 config.load_calibration()
-                game_mode = False # Inicia en modo libre
+                print("✓ Calibración cargada. Volviendo al menú principal.")
+                continue
                 
             elif start_mode == "config_new":
                 print("Iniciando proceso de calibración...")
-                run_calibration_process(ui_helper_menu, pixel_width, pixel_height, config)
-                game_mode = False
+                # Forzar recalibración para mostrar directamente el diálogo de configuración
+                success = run_calibration_process(ui_helper_menu, pixel_width, pixel_height, config, force_recalibration=True)
+                
+                if success:
+                    print("✓ Calibración completada. Volviendo al menú principal.")
+                else:
+                    print("Calibración cancelada. Volviendo al menú principal.")
+                
+                # Volver al menú principal para seleccionar modo de juego
+                continue
+                
+            elif start_mode == "config_view":
+                print("Mostrando datos de calibración...")
+                from src.calibration.calibration_config import CalibrationConfig
+                from src.calibration.qt_calibration_summary import CalibrationSummaryDialog, show_calibration_summary
+                
+                if CalibrationConfig.calibration_exists():
+                    summary = CalibrationConfig.get_calibration_summary()
+                    # Capturar acción de retorno
+                    action = show_calibration_summary(summary)
+                    
+                    if action == CalibrationSummaryDialog.ACTION_RECALIBRATE_ALL:
+                        print("Iniciando re-calibración desde vista de datos...")
+                        success = run_calibration_process(ui_helper_menu, pixel_width, pixel_height, config, force_recalibration=True)
+                        if success:
+                            print("✓ Calibración completada.")
+                        else:
+                            print("Calibración cancelada.")
+                else:
+                    print("⚠ No hay datos de calibración guardados.")
+                    # Podríamos mostrar un mensaje emergente aquí si fuera necesario
+                
+                # Volver al menú principal
+                continue
                 
             elif start_mode == "config_skip":
                 print("Usando valores por defecto (sin calibración)")
-                game_mode = False
+                continue
             # ------------------------------
             # set up cameras
             # ------------------------------
@@ -1098,7 +1119,7 @@ def main():
 
                 # IMPORTANTE: Cambia 0.0 por 0.001. 
                 # 0.0 puede causar bloqueo total si la cámara demora un milisegundo.
-                wait_time = 0.001 if game_mode else 0.1
+                wait_time = 0.001  # Siempre rápido para evitar lag en UI
                 
                 finished_left, frame_left = cam_left.next(black=True, wait=wait_time)
                 finished_right, frame_right = cam_right.next(black=True, wait=wait_time)
