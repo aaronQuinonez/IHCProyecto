@@ -12,7 +12,7 @@ import time
 from typing import Optional
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QProgressBar, QFrame
+    QLabel, QPushButton, QProgressBar, QFrame, QGridLayout
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QImage, QPixmap, QFont
@@ -38,6 +38,7 @@ class SongWindow(QMainWindow):
         self.virtual_keyboard = virtual_keyboard
         self.hand_detector_left = hand_detector_left
         self.hand_detector_right = hand_detector_right
+        self.keyboard_total_keys = keyboard_total_keys  # Guardar para usar en start()
         
         # Crear procesador de teclado centralizado
         if keyboard_mapper and angler:
@@ -130,29 +131,7 @@ class SongWindow(QMainWindow):
         main_layout.setSpacing(10)
         main_layout.setContentsMargins(10, 10, 10, 10)
         
-        # ========== CABECERA ==========
-        header_layout = QHBoxLayout()
-        
-        # Título de la canción
-        title_label = QLabel(f"♪ {self.song.name}")
-        title_label.setObjectName("title")
-        header_layout.addWidget(title_label)
-        
-        header_layout.addStretch()
-        
-        # Info de la canción
-        info_label = QLabel(f"{self.song.bpm} BPM  •  {self.song.difficulty}")
-        info_label.setObjectName("info")
-        header_layout.addWidget(info_label)
-        
-        header_layout.addSpacing(20)
-        
-        # Score
-        self.score_label = QLabel("Score: 0")
-        self.score_label.setObjectName("score")
-        header_layout.addWidget(self.score_label)
-        
-        main_layout.addLayout(header_layout)
+        # Cabecera eliminada - no es necesaria
         
         # ========== ÁREA DE CÁMARAS (con notas dibujadas) ==========
         camera_frame = QFrame()
@@ -167,6 +146,53 @@ class SongWindow(QMainWindow):
         
         main_layout.addWidget(camera_frame, 1)
         
+        # ========== ESTADÍSTICAS DE PUNTUACIÓN ==========
+        stats_layout = QVBoxLayout()
+        stats_layout.setSpacing(10)
+        
+        stats_title = QLabel("ESTADÍSTICAS:")
+        stats_title.setObjectName("info")
+        stats_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #ffffff;")
+        stats_layout.addWidget(stats_title)
+        
+        # Score grande
+        self.score_label = QLabel("Score: 0")
+        self.score_label.setObjectName("score")
+        self.score_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #00ff00;")
+        stats_layout.addWidget(self.score_label)
+        
+        # Combo
+        self.combo_label = QLabel("Combo: 0x")
+        self.combo_label.setObjectName("info")
+        self.combo_label.setStyleSheet("font-size: 16px; color: #00ffff;")
+        stats_layout.addWidget(self.combo_label)
+        
+        # Estadísticas detalladas
+        stats_grid = QGridLayout()
+        stats_grid.setSpacing(5)
+        
+        self.perfect_label = QLabel("PERFECT: 0")
+        self.perfect_label.setObjectName("info")
+        self.perfect_label.setStyleSheet("color: #00ff00;")
+        stats_grid.addWidget(self.perfect_label, 0, 0)
+        
+        self.good_label = QLabel("GOOD: 0")
+        self.good_label.setObjectName("info")
+        self.good_label.setStyleSheet("color: #ffff00;")
+        stats_grid.addWidget(self.good_label, 0, 1)
+        
+        self.miss_label = QLabel("MISS: 0")
+        self.miss_label.setObjectName("info")
+        self.miss_label.setStyleSheet("color: #ff0000;")
+        stats_grid.addWidget(self.miss_label, 1, 0)
+        
+        self.accuracy_label = QLabel("Precisión: 0%")
+        self.accuracy_label.setObjectName("info")
+        self.accuracy_label.setStyleSheet("color: #ffffff;")
+        stats_grid.addWidget(self.accuracy_label, 1, 1)
+        
+        stats_layout.addLayout(stats_grid)
+        
         # ========== BARRA DE PROGRESO ==========
         progress_layout = QHBoxLayout()
         progress_label = QLabel("Progreso:")
@@ -178,7 +204,8 @@ class SongWindow(QMainWindow):
         self.progress_bar.setValue(0)
         progress_layout.addWidget(self.progress_bar, 1)
         
-        main_layout.addLayout(progress_layout)
+        stats_layout.addLayout(progress_layout)
+        main_layout.addLayout(stats_layout)
         
         # ========== PIE DE PÁGINA ==========
         footer_layout = QHBoxLayout()
@@ -199,7 +226,11 @@ class SongWindow(QMainWindow):
     
     def _start_game(self):
         """Inicia el juego"""
-        self.song.start()
+        # Inicializar canción con teclado virtual y número de teclas
+        self.song.start(
+            virtual_keyboard=self.virtual_keyboard,
+            num_keys=self.keyboard_total_keys
+        )
         self.timer.timeout.connect(self._update_frame)
         self.timer.start(30)  # ~33 FPS
     
@@ -217,6 +248,7 @@ class SongWindow(QMainWindow):
             return
         
         # Procesar teclado virtual con el procesador centralizado
+        # Ahora usa game_mode=True y pasa rhythm_game para dibujar notas
         if self.keyboard_processor and self.hand_detector_left and self.hand_detector_right:
             try:
                 frame_left, frame_right = self.keyboard_processor.process_and_play(
@@ -225,15 +257,15 @@ class SongWindow(QMainWindow):
                     virtual_keyboard=self.virtual_keyboard,
                     hand_detector_left=self.hand_detector_left,
                     hand_detector_right=self.hand_detector_right,
-                    game_mode=False,  # Songs usa modo libre
-                    rhythm_game=None
+                    game_mode=True,  # Modo juego de ritmo activado
+                    rhythm_game=self.song.rhythm_game if self.song.rhythm_game else None
                 )
             except Exception as e:
                 print(f"Error procesando teclado: {e}")
                 import traceback
                 traceback.print_exc()
         
-        # Ejecutar lógica de la canción (dibuja en los frames)
+        # Ejecutar lógica de la canción (actualiza estado, NO dibuja)
         try:
             frame_left, frame_right, continue_running = self.song.run(
                 frame_left, frame_right, self.virtual_keyboard, self.synth
@@ -243,15 +275,35 @@ class SongWindow(QMainWindow):
                 self.continue_song = False
                 print("✓ Canción terminada")
             
-            # Actualizar score
-            self.score_label.setText(f"Score: {self.song.score}")
+            # Actualizar UI usando get_song_state() (similar a get_lesson_state())
+            song_state = self.song.get_song_state()
+            stats = song_state.get('stats', {})
             
-            # Actualizar progreso (basado en tiempo)
-            if hasattr(self.song, 'chart') and self.song.chart:
-                current_time = time.time() - self.song.start_time
-                last_note_time = self.song.chart[-1]["time"]
-                progress = min(100, int((current_time / (last_note_time + 2)) * 100))
-                self.progress_bar.setValue(progress)
+            # Actualizar score
+            self.score_label.setText(f"Score: {song_state['score']:,}")
+            
+            # Actualizar combo
+            self.combo_label.setText(f"Combo: {song_state['combo']}x")
+            
+            # Actualizar estadísticas detalladas
+            self.perfect_label.setText(f"PERFECT: {stats.get('perfect', 0)}")
+            self.good_label.setText(f"GOOD: {stats.get('good', 0)}")
+            self.miss_label.setText(f"MISS: {stats.get('miss', 0)}")
+            
+            # Actualizar precisión con color según rendimiento
+            accuracy = stats.get('accuracy', 0)
+            if accuracy >= 90:
+                acc_color = "#00ff00"  # Verde
+            elif accuracy >= 70:
+                acc_color = "#ffff00"  # Amarillo
+            else:
+                acc_color = "#ff0000"  # Rojo
+            
+            self.accuracy_label.setText(f"Precisión: {accuracy:.1f}%")
+            self.accuracy_label.setStyleSheet(f"color: {acc_color};")
+            
+            # Actualizar progreso
+            self.progress_bar.setValue(song_state['progress'])
             
         except Exception as e:
             print(f"Error ejecutando canción: {e}")

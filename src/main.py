@@ -41,7 +41,7 @@ from src.ui.qt_song_window import show_song_window
 # --- Theory ---
 from src.theory import get_lesson_manager
 # --- Songs ---
-from src.songs.song_manager import get_all_songs
+from src.songs.song_manager import get_all_songs, get_song_manager
 
 # --- Config UI ---
 # ConfigUI removed
@@ -690,6 +690,12 @@ def main():
             in_lesson = False
             current_lesson = None
             
+            # Inicializar song_manager y variables de rhythm
+            song_manager_instance = get_song_manager()
+            rhythm_mode = False
+            in_song = False
+            current_song = None
+            
             # Manejar selección de teoría con menú PyQt6
             if start_mode and start_mode.startswith("theory_"):
                 # Si viene desde el menú principal con lección específica
@@ -725,6 +731,27 @@ def main():
                         continue  # Volver al inicio del loop global
                 else:
                     print("⚠ No hay lecciones disponibles.")
+            
+            # Manejar selección de rhythm con menú PyQt6
+            elif start_mode == "rhythm":
+                songs_dict = song_manager_instance.get_all_songs()
+                
+                if songs_dict:
+                    selected_song_name = show_songs_menu(songs_dict)
+                    
+                    if selected_song_name:
+                        song = song_manager_instance.get_song(selected_song_name)
+                        if song:
+                            current_song = song
+                            in_song = True
+                            rhythm_mode = True
+                            print(f"✓ Canción seleccionada: '{song.name}'")
+                    else:
+                        print("Regresando al menú principal...")
+                        continue  # Volver al inicio del loop global
+                else:
+                    print("⚠ No hay canciones disponibles.")
+                    continue
             
             if start_mode is None or start_mode == "exit":
                 print("Saliendo desde el menú principal...")
@@ -962,6 +989,7 @@ def main():
                 r"C:\CodingWindows\IHCProyecto\utils\fluid\fluid\FluidR3_GM.sf2",
                 r"C:\CodingWindows\IHCProyecto\utils\fluid\FluidR3_GM.sf2",
                 r"C:\Users\MI PC\OneDrive\Desktop\fluid\FluidR3_GM.sf2",
+                r"C:\Users\USER\fluid\FluidR3_GM.sf2",
                 AppConfig.get_soundfont_path()
             ]
             
@@ -1002,71 +1030,11 @@ def main():
 
             # ACTIVAR MODO INICIAL
 
-            if initial_mode == "rhythm":
-                # Modo ritmo ahora muestra el menú de canciones con PyQt6
-                songs_dict = get_all_songs()
-                if songs_dict:
-                    selected_song_name = show_songs_menu(songs_dict)
-                    if selected_song_name and selected_song_name in songs_dict:
-                        current_song = songs_dict[selected_song_name]
-                        print(f"✓ Iniciando canción: {current_song.name}")
-                        show_song_window(current_song, cam_left, cam_right, fs, vk_left,
-                                       left_detector, right_detector, km, angler, 
-                                       depth_estimator, octave_base, KEYBOARD_TOT_KEYS,
-                                       camera_separation)
-                        print("✓ Canción finalizada")
-                    else:
-                        print("No se seleccionó canción")
-                else:
-                    print("❌ No hay canciones disponibles")
-                
-                # Volver al menú principal
-                initial_mode = show_main_menu()
-                continue
-
-            elif initial_mode == "songs":
-                # Modo songs ahora con PyQt6
-                songs_dict = get_all_songs()
-                if songs_dict:
-                    selected_song_name = show_songs_menu(songs_dict)
-                    if selected_song_name and selected_song_name in songs_dict:
-                        current_song = songs_dict[selected_song_name]
-                        print(f"✓ Iniciando canción: {current_song.name}")
-                        show_song_window(current_song, cam_left, cam_right, fs, vk_left,
-                                       left_detector, right_detector, km, angler, 
-                                       depth_estimator, octave_base, KEYBOARD_TOT_KEYS,
-                                       camera_separation)
-                        print("✓ Canción finalizada")
-                    else:
-                        print("No se seleccionó canción")
-                else:
-                    print("❌ No hay canciones disponibles")
-                
-                # Volver al menú principal
-                initial_mode = show_main_menu()
-                continue
-            
-            elif initial_mode == "free":
+            if initial_mode == "free":
                 game_mode = False
                 theory_mode = False
+                rhythm_mode = False
                 print("Modo LIBRE iniciado desde el menú principal.")
-
-            elif initial_mode and initial_mode.startswith("theory_"):
-                theory_mode = True
-                game_mode = False
-                
-                target_lesson_id = initial_mode.replace("theory_", "")
-                lesson = lesson_manager.get_lesson(target_lesson_id)
-                
-                if lesson:
-                    current_lesson = lesson
-                    current_lesson.start()
-                    in_lesson = True
-                    print(f"✓ Modo TEORÍA iniciado: Lección '{lesson.name}'")
-                else:
-                    print(f"⚠ No se encontró la lección '{target_lesson_id}'.")
-                    # Si no se encuentra, simplemente continuar sin modo teoría
-                    theory_mode = False
 
             elif initial_mode == "config":
                 game_mode = False
@@ -1347,8 +1315,112 @@ def main():
                     theory_mode = False
                     print("Lección terminada. Regresando al menú principal...")
                     break  # Salir del loop de OpenCV para volver al menú principal
+                
+                # === MODO RITMO (CANCIONES) ===
+                if rhythm_mode and in_song and current_song:
+                    # Abrir ventana PyQt6 para la canción (bloquea hasta que termine)
+                    print(f"Iniciando ventana de canción: {current_song.name}")
+                    
+                    # Llamar a la ventana PyQt6 (esto bloquea hasta que termine la canción)
+                    song_completed = show_song_window(
+                        song=current_song,
+                        camera_left=cam_left,
+                        camera_right=cam_right,
+                        synth=fs,
+                        virtual_keyboard=vk_left,
+                        hand_detector_left=left_detector,
+                        hand_detector_right=right_detector,
+                        keyboard_mapper=km,
+                        angler=angler,
+                        depth_estimator=depth_estimator,
+                        octave_base=octave_base,
+                        keyboard_total_keys=KEYBOARD_TOT_KEYS,
+                        camera_separation=camera_separation
+                    )
+                    
+                    # Cuando la ventana se cierre, limpiar estado
+                    current_song.stop()
+                    in_song = False
+                    current_song = None
+                    rhythm_mode = False
+                    print("Canción terminada. Regresando al menú principal...")
+                    break  # Salir del loop de OpenCV para volver al menú principal
+                
                 # === MODO CONFIGURACIÓN ===
                 # Config mode removed
+
+                if initial_mode == "free" and not theory_mode and not rhythm_mode:
+                    h_frame, w_frame = frame_left.shape[:2]
+                    
+                    # --- CONFIGURACIÓN DE ESTILO ---
+                    # Colores (B, G, R)
+                    bg_color = (30, 30, 30)       # Gris oscuro casi negro
+                    border_color = (255, 191, 0)  # Cian/Deep Sky Blue (Acento)
+                    text_color = (255, 255, 255)  # Blanco
+                    key_bg_color = (80, 80, 80)   # Gris más claro para la "tecla"
+                    
+                    # Dimensiones
+                    panel_w = 220
+                    panel_h = 70
+                    margin = 20
+                    x_start = w_frame - panel_w - margin
+                    y_start = margin
+                    x_end = w_frame - margin
+                    y_end = margin + panel_h
+
+                    # --- 1. FONDO SEMI-TRANSPARENTE (Glass look) ---
+                    # Creamos una copia para la transparencia (overlay)
+                    sub_img = frame_left[y_start:y_end, x_start:x_end]
+                    white_rect = np.full(sub_img.shape, bg_color, dtype=np.uint8)
+                    
+                    # Mezclamos: 0.3 imagen original + 0.7 color de fondo (bastante oscuro para legibilidad)
+                    res = cv2.addWeighted(sub_img, 0.3, white_rect, 0.7, 1.0)
+                    frame_left[y_start:y_end, x_start:x_end] = res
+
+                    # --- 2. BORDE DECORATIVO (Solo a la izquierda o completo) ---
+                    # Opción elegante: Borde fino alrededor
+                    cv2.rectangle(frame_left, (x_start, y_start), (x_end, y_end), border_color, 1, cv2.LINE_AA)
+                    # Opción extra: Una barra de acento más gruesa a la izquierda
+                    cv2.rectangle(frame_left, (x_start, y_start), (x_start + 4, y_end), border_color, -1)
+
+                    # --- 3. TEXTO PRINCIPAL ("MENU") ---
+                    main_text = "MENU PRINCIPAL"
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    font_scale = 0.55
+                    thickness = 1
+                    
+                    # Calcular tamaño para centrar
+                    (text_w, text_h), _ = cv2.getTextSize(main_text, font, font_scale, thickness)
+                    text_x = x_start + (panel_w - text_w) // 2
+                    text_y = y_start + 25
+                    
+                    cv2.putText(frame_left, main_text, (text_x, text_y), font, font_scale, text_color, thickness, cv2.LINE_AA)
+
+                    # --- 4. VISUALIZACIÓN DE TECLAS [ M ] / [ ESC ] ---
+                    # Vamos a dibujar "teclas" falsas
+                    key_text_1 = "[ M ]"
+                    key_text_2 = "[ ESC ]"
+                    
+                    # Config fuente pequeña
+                    k_font_scale = 0.4
+                    
+                    # Calcular posiciones
+                    (k1_w, k1_h), _ = cv2.getTextSize(key_text_1, font, k_font_scale, 1)
+                    (k2_w, k2_h), _ = cv2.getTextSize(key_text_2, font, k_font_scale, 1)
+                    
+                    total_keys_w = k1_w + 15 + k2_w # 15px de espacio entre ellos
+                    start_keys_x = x_start + (panel_w - total_keys_w) // 2
+                    keys_y = y_start + 55
+
+                    # Dibujar tecla M
+                    # Fondo tecla (rectángulo relleno gris claro)
+                    # cv2.rectangle(frame_left, (start_keys_x - 4, keys_y - k1_h - 4), (start_keys_x + k1_w + 4, keys_y + 4), key_bg_color, -1)
+                    cv2.putText(frame_left, key_text_1, (start_keys_x, keys_y), font, k_font_scale, border_color, 1, cv2.LINE_AA)
+
+                    # Dibujar tecla ESC
+                    esc_x = start_keys_x + k1_w + 15
+                    # cv2.rectangle(frame_left, (esc_x - 4, keys_y - k2_h - 4), (esc_x + k2_w + 4, keys_y + 4), key_bg_color, -1)
+                    cv2.putText(frame_left, key_text_2, (esc_x, keys_y), font, k_font_scale, (180, 180, 180), 1, cv2.LINE_AA)
 
                 # Combinar frames antes de procesar UI
                 if camera_in_front_of_you:
@@ -1412,6 +1484,10 @@ def main():
                     break
                 if key == ord('q'):
                     break
+                # Tecla 'M' o ESC para volver al menú principal (solo en modo libre)
+                elif (key == ord('m') or key == ord('M') or key == 27) and initial_mode == "free" and not theory_mode and not rhythm_mode:
+                    print("Volviendo al menú principal...")
+                    break  # Salir del bucle para volver al menú
                 # Legacy key c removed
                 elif key == ord('d'):
                     if display_dashboard:
