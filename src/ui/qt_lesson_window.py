@@ -57,7 +57,7 @@ class LessonWindow(QMainWindow):
         
         # Configuración de ventana
         self.setWindowTitle(f"Teoría Musical - {lesson.name}")
-        self.setMinimumSize(1400, 800)
+        self.setMinimumSize(1100, 700)
         
         self.setStyleSheet("""
             QMainWindow {
@@ -84,7 +84,7 @@ class LessonWindow(QMainWindow):
                 background-color: #000000;
                 color: #ffffff;
                 border: 1px solid #ffffff;
-                font-size: 12px;
+                font-size: 14px;
                 padding: 10px;
             }
             QPushButton {
@@ -126,6 +126,11 @@ class LessonWindow(QMainWindow):
         """)
         
         self._build_ui()
+        
+        # --- CORRECCIÓN CLAVE: Asegurar que la ventana tenga el foco ---
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFocus()
+        
         self._start_camera_feed()
     
     def _build_ui(self):
@@ -156,22 +161,22 @@ class LessonWindow(QMainWindow):
         # ========== CONTENIDO PRINCIPAL (Cámaras + Panel) ==========
         content_layout = QHBoxLayout()
         
-        # --- Panel Izquierdo: Cámaras ---
+        # --- Panel Izquierdo: Cámara ---
         camera_container = QVBoxLayout()
         
-        # Frame para las cámaras
+        # Frame para la cámara
         self.camera_frame = QFrame()
         self.camera_frame.setObjectName("cameraFrame")
         camera_frame_layout = QVBoxLayout(self.camera_frame)
         
         self.camera_label = QLabel()
         self.camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.camera_label.setMinimumSize(960, 480)  # 640x480 x 2 cámaras
+        self.camera_label.setMinimumSize(640, 480) 
         self.camera_label.setScaledContents(False)
         camera_frame_layout.addWidget(self.camera_label)
         
         camera_container.addWidget(self.camera_frame)
-        content_layout.addLayout(camera_container, 2)  # 2/3 del espacio
+        content_layout.addLayout(camera_container, 3)
         
         # --- Panel Derecho: Información de la Lección ---
         info_panel = QVBoxLayout()
@@ -186,6 +191,8 @@ class LessonWindow(QMainWindow):
         self.description_text.setReadOnly(True)
         self.description_text.setMaximumHeight(80)
         self.description_text.setText(self.lesson.description)
+        # EVITAR QUE ROBE FOCO (ESPACIO)
+        self.description_text.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         info_panel.addWidget(self.description_text)
         
         # Instrucciones (área dinámica)
@@ -196,6 +203,8 @@ class LessonWindow(QMainWindow):
         self.instructions_text = QTextEdit()
         self.instructions_text.setReadOnly(True)
         self.instructions_text.setMinimumHeight(200)
+        # EVITAR QUE ROBE FOCO (ESPACIO)
+        self.instructions_text.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         info_panel.addWidget(self.instructions_text)
         
         # Progreso
@@ -209,7 +218,7 @@ class LessonWindow(QMainWindow):
         self.progress_bar.setValue(0)
         info_panel.addWidget(self.progress_bar)
         
-        # Info adicional de la lección (personalizable)
+        # Info adicional de la lección
         self.custom_info_label = QLabel("")
         self.custom_info_label.setObjectName("instruction")
         self.custom_info_label.setWordWrap(True)
@@ -224,11 +233,13 @@ class LessonWindow(QMainWindow):
         self.exit_button = QPushButton("SALIR DE LA LECCIÓN")
         self.exit_button.setObjectName("exitButton")
         self.exit_button.clicked.connect(self._exit_lesson)
+        # EVITAR QUE ROBE FOCO
+        self.exit_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         button_layout.addWidget(self.exit_button)
         
         info_panel.addLayout(button_layout)
         
-        content_layout.addLayout(info_panel, 1)  # 1/3 del espacio
+        content_layout.addLayout(info_panel, 2)
         
         main_layout.addLayout(content_layout)
         
@@ -249,14 +260,14 @@ class LessonWindow(QMainWindow):
             self.close()
             return
         
-        # Obtener frames de las cámaras usando el método next()
+        # Obtener frames de las cámaras
         finished_left, frame_left = self.camera_left.next(black=True, wait=1)
         finished_right, frame_right = self.camera_right.next(black=True, wait=1)
         
         if frame_left is None or frame_right is None:
             return
         
-        # Procesar teclado virtual con el procesador centralizado
+        # Procesar teclado virtual (si está habilitado)
         if self.keyboard_processor and self.hand_detector_left and self.hand_detector_right:
             try:
                 frame_left, frame_right = self.keyboard_processor.process_and_play(
@@ -270,17 +281,23 @@ class LessonWindow(QMainWindow):
                 )
             except Exception as e:
                 print(f"Error procesando teclado: {e}")
-                import traceback
-                traceback.print_exc()
         
-        # Ejecutar lógica de la lección (sin dibujar en frames)
-        # La lección debe actualizar su estado interno
+        # Ejecutar lógica de la lección
         try:
+            # Llamamos a run() pasando el synth para que suenen las notas
+            frame_left, frame_right, _ = self.lesson.run(
+                frame_left, frame_right, 
+                self.virtual_keyboard, self.synth,
+                self.hand_detector_left, self.hand_detector_right
+            )
+            
+            # Obtener estado para UI (Texto)
             lesson_data = self.lesson.get_lesson_state()
             
-            # Actualizar UI con datos de la lección
             if 'instructions' in lesson_data:
-                self.instructions_text.setText(lesson_data['instructions'])
+                new_instructions = lesson_data['instructions']
+                if self.instructions_text.toPlainText() != new_instructions:
+                    self.instructions_text.setText(new_instructions)
             
             if 'progress' in lesson_data:
                 self.progress_bar.setValue(lesson_data['progress'])
@@ -291,29 +308,22 @@ class LessonWindow(QMainWindow):
         except Exception as e:
             print(f"Error ejecutando lección: {e}")
         
-        # Aplicar flip horizontal para corregir efecto espejo
+        # Aplicar flip horizontal para corregir efecto espejo en la visualización
         frame_left = cv2.flip(frame_left, 1)
-        frame_right = cv2.flip(frame_right, 1)
         
-        # Concatenar frames en orden correcto (derecha primero, izquierda después)
-        h_frames = np.concatenate((frame_right, frame_left), axis=1)
-        
-        # Convertir a QPixmap y mostrar
-        self._display_frame(h_frames)
+        # Mostrar solo frame izquierdo
+        self._display_frame(frame_left)
     
     def _display_frame(self, frame):
         """Convierte frame OpenCV a QPixmap y lo muestra"""
         try:
-            # Convertir BGR a RGB
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w, ch = rgb_frame.shape
             bytes_per_line = ch * w
             
-            # Crear QImage
             q_img = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
-            
-            # Escalar manteniendo aspect ratio
             pixmap = QPixmap.fromImage(q_img)
+            
             scaled_pixmap = pixmap.scaled(
                 self.camera_label.size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
@@ -335,14 +345,11 @@ class LessonWindow(QMainWindow):
         """Maneja eventos de teclado"""
         key = event.key()
         
-        # ESC o Q para salir
         if key in (Qt.Key.Key_Escape, Qt.Key.Key_Q):
             self._exit_lesson()
             return
         
-        # Pasar otras teclas a la lección
         try:
-            # Convertir Qt.Key a código similar a OpenCV
             if key >= Qt.Key.Key_A and key <= Qt.Key.Key_Z:
                 char_code = ord('a') + (key - Qt.Key.Key_A)
                 self.lesson.handle_key(char_code, self.synth)
@@ -350,15 +357,16 @@ class LessonWindow(QMainWindow):
                 char_code = ord('0') + (key - Qt.Key.Key_0)
                 self.lesson.handle_key(char_code, self.synth)
             elif key == Qt.Key.Key_Space:
+                # El espacio debería llegar aquí ahora que los cuadros de texto no tienen foco
                 self.lesson.handle_key(ord(' '), self.synth)
-            elif key == Qt.Key.Key_Left:  # Flecha izquierda
-                self.lesson.handle_key(81, self.synth)  # Código OpenCV
-            elif key == Qt.Key.Key_Right:  # Flecha derecha
-                self.lesson.handle_key(83, self.synth)  # Código OpenCV
-            elif key == Qt.Key.Key_Up:  # Flecha arriba
-                self.lesson.handle_key(82, self.synth)  # Código OpenCV
-            elif key == Qt.Key.Key_Down:  # Flecha abajo
-                self.lesson.handle_key(84, self.synth)  # Código OpenCV
+            elif key == Qt.Key.Key_Left:
+                self.lesson.handle_key(81, self.synth)
+            elif key == Qt.Key.Key_Right:
+                self.lesson.handle_key(83, self.synth)
+            elif key == Qt.Key.Key_Up:
+                self.lesson.handle_key(82, self.synth)
+            elif key == Qt.Key.Key_Down:
+                self.lesson.handle_key(84, self.synth)
             elif key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
                 self.lesson.handle_key(ord('+'), self.synth)
             elif key == Qt.Key.Key_Minus:
@@ -368,7 +376,6 @@ class LessonWindow(QMainWindow):
             print(f"Error manejando tecla: {e}")
     
     def closeEvent(self, event):
-        """Maneja el cierre de la ventana"""
         self.timer.stop()
         self.continue_lesson = False
         if self.lesson:
@@ -380,12 +387,6 @@ def show_lesson_window(lesson, camera_left, camera_right, synth,
                       virtual_keyboard, hand_detector_left=None, hand_detector_right=None,
                       keyboard_mapper=None, angler=None, depth_estimator=None,
                       octave_base=60, keyboard_total_keys=24, camera_separation=9.07):
-    """
-    Muestra la ventana de lección y bloquea hasta que termine
-    
-    Returns:
-        bool: True si completó, False si salió
-    """
     app = QApplication.instance()
     owns_app = False
     if app is None:
@@ -398,11 +399,9 @@ def show_lesson_window(lesson, camera_left, camera_right, synth,
                          keyboard_total_keys, camera_separation)
     window.show()
     
-    # Ejecutar hasta que se cierre la ventana
     if owns_app:
         app.exec()
     else:
-        # Si ya existe QApplication, usar un loop local
         while window.isVisible():
             app.processEvents()
     
