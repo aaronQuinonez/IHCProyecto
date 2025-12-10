@@ -44,11 +44,11 @@ from src.theory import get_lesson_manager
 from src.songs.song_manager import get_all_songs
 
 # --- Config UI ---
-from src.ui.config_ui import ConfigUI
+# ConfigUI removed
 from src.config.app_config import AppConfig
 
 # --- Common ---
-from src.common.toolbox import round_half_up
+from src.utils import round_half_up
 
 def frame_add_crosshairs(frame, x, y, r=20, lc=(0, 0, 255), cc=(0, 0, 255), lw=2, cw=1):
 
@@ -937,7 +937,7 @@ def main():
             # Inicializar sistemas
             rhythm_game = RhythmGame(num_keys=KEYBOARD_TOT_KEYS)
             lesson_manager = lesson_manager_instance  # Usar la instancia ya creada
-            config_ui = ConfigUI(pixel_width * 2, pixel_height)
+            # config_ui removed
             km = kbm.KeyboardMap(depth_threshold=config.DEPTH_THRESHOLD)
             
             # Inicializar detectores de manos
@@ -959,6 +959,7 @@ def main():
             
             # Buscar SoundFont en múltiples ubicaciones
             soundfont_paths = [
+                r"C:\CodingWindows\IHCProyecto\utils\fluid\fluid\FluidR3_GM.sf2",
                 r"C:\CodingWindows\IHCProyecto\utils\fluid\FluidR3_GM.sf2",
                 r"C:\Users\MI PC\OneDrive\Desktop\fluid\FluidR3_GM.sf2",
                 AppConfig.get_soundfont_path()
@@ -996,7 +997,7 @@ def main():
             # theory_mode, in_lesson, current_lesson ya están definidos
             
             # Inicializar UI de configuración
-            config_ui = ConfigUI(pixel_width * 2, pixel_height)
+            # config_ui removed
             config_mode = False  # False = otros modos, True = modo configuración
 
             # ACTIVAR MODO INICIAL
@@ -1347,62 +1348,7 @@ def main():
                     print("Lección terminada. Regresando al menú principal...")
                     break  # Salir del loop de OpenCV para volver al menú principal
                 # === MODO CONFIGURACIÓN ===
-                if config_mode:
-                    # Mostrar panel de configuración
-                    if camera_in_front_of_you:
-                        h_frames = np.concatenate((frame_right, frame_left), axis=1)
-                    else:
-                        h_frames = np.concatenate((frame_left, frame_right), axis=1)
-                    
-                    h_frames = config_ui.draw_config_panel(h_frames)
-                    cv2.imshow(main_window_name, h_frames)
-                    
-                    # Manejar teclas del panel de configuración
-                    key = cv2.waitKey(1) & 0xFF
-                    
-                    # Navegación
-                    if key == 82 or key == ord('w') or key == ord('W'):  # Arriba
-                        config_ui.navigate_up()
-                    elif key == 84 or key == ord('s') or key == ord('S'):  # Abajo
-                        config_ui.navigate_down()
-                    
-                    # Ajustar valores
-                    elif key == 83 or key == ord('d') or key == ord('D'):  # Derecha (aumentar)
-                        config_ui.increase_value()
-                        # Aplicar cambios en tiempo real
-                        km.depth_threshold = AppConfig.DEPTH_THRESHOLD
-                        km.velocity_threshold = AppConfig.VELOCITY_THRESHOLD
-                        km.velocity_enabled = AppConfig.VELOCITY_ENABLED
-                        km.velocity_history_size = AppConfig.VELOCITY_HISTORY_SIZE
-                    elif key == 81 or key == ord('a') or key == ord('A'):  # Izquierda (disminuir)
-                        config_ui.decrease_value()
-                        # Aplicar cambios en tiempo real
-                        km.depth_threshold = AppConfig.DEPTH_THRESHOLD
-                        km.velocity_threshold = AppConfig.VELOCITY_THRESHOLD
-                        km.velocity_enabled = AppConfig.VELOCITY_ENABLED
-                        km.velocity_history_size = AppConfig.VELOCITY_HISTORY_SIZE
-                    
-                    # Presets (teclas 1-4)
-                    elif 49 <= key <= 52:  # Teclas 1-4
-                        preset_idx = key - 49
-                        if preset_idx < len(config_ui.presets):
-                            preset_key = config_ui.presets[preset_idx]['key']
-                            config_ui.apply_preset(preset_key)
-                            config_ui.selected_preset = preset_idx
-                            print(f"✓ Preset aplicado: {config_ui.presets[preset_idx]['name']}")
-                            # Aplicar cambios en tiempo real
-                            km.depth_threshold = AppConfig.DEPTH_THRESHOLD
-                            km.velocity_threshold = AppConfig.VELOCITY_THRESHOLD
-                            km.velocity_enabled = AppConfig.VELOCITY_ENABLED
-                            km.velocity_history_size = AppConfig.VELOCITY_HISTORY_SIZE
-                    
-                    # Salir
-                    elif key == ord('q') or key == ord('Q') or key == 27:  # Q o ESC
-                        config_mode = False
-                        config_ui.reset_selection()
-                        print("Modo configuración desactivado")
-                    
-                    continue  # Saltar el resto del loop principal
+                # Config mode removed
 
                 # Combinar frames antes de procesar UI
                 if camera_in_front_of_you:
@@ -1411,19 +1357,7 @@ def main():
                     h_frames = np.concatenate((frame_left, frame_right), axis=1)
                 
                 # Mostrar pantalla de bienvenida si es necesario
-                if ui_helper.show_instructions:
-                    welcome_frame = np.zeros((pixel_height, pixel_width * 2, 3), dtype=np.uint8)
-                    welcome_frame = ui_helper.draw_welcome_screen(welcome_frame)
-                    cv2.imshow(main_window_name, welcome_frame)
-                    
-                    # Esperar tecla SOLO para salir de instrucciones
-                    key = cv2.waitKey(1) & 0xFF
-                    if key != 255:  # Si se presiona cualquier tecla
-                        ui_helper.show_instructions = False
-                        ui_helper.frame_count = ui_helper.instructions_timeout
-                    
-                    # Importante: Saltar el resto del bucle mientras se muestran instrucciones
-                    continue
+                # Welcome screen removed
                 if display_dashboard:
                     # Display dashboard data
                     fps1 = int(cam_left.current_frame_rate)
@@ -1478,50 +1412,13 @@ def main():
                     break
                 if key == ord('q'):
                     break
-                elif key == ord('c') or key == ord('C'):  # ========== MODO CONFIGURACIÓN ==========
-                    # Solo toggle si NO estamos en config_mode, theory_mode o game_mode
-                    if not config_mode and not theory_mode and not game_mode:
-                        config_mode = True
-                        print("\n=== MODO CONFIGURACIÓN ACTIVADO ===")
-                        print("Controles:")
-                        print("  W/S o ↑/↓: Navegar parámetros")
-                        print("  A/D o ←/→: Disminuir/Aumentar valor")
-                        print("  1-4: Aplicar preset (Suave/Normal/Estricto/Clásico)")
-                        print("  Q/ESC: Salir")
-                        print("=====================================\n")
+                # Legacy key c removed
                 elif key == ord('d'):
                     if display_dashboard:
                         display_dashboard = False
                     else:
                         display_dashboard = True
-                elif key == ord('n') or key == ord('N'):  # ========== MODO CANCIONES (NEW) ==========
-                    songs_mode = True
-                    game_mode = False
-                    theory_mode = False
-                    if rhythm_game.is_playing:
-                        rhythm_game.stop_game()
-                    songs_ui.reset_selection()
-                    print("¡Modo Canciones activado! Selecciona una canción. Presiona Q para salir.")
-                elif key == ord('g'):  # ========== NUEVA TECLA ==========
-                    game_mode = True
-                    rhythm_game.start_game(TUTORIAL_FACIL)
-                    print("¡Juego de ritmo iniciado! Presiona 'f' para volver al modo libre")
-                    ui_helper.reset_instructions()  # Mostrar instrucciones del juego
-                elif key == ord('f'):  # ========== NUEVA TECLA ==========
-                    # Detener juego si está activo
-                    if game_mode and rhythm_game.is_playing:
-                        rhythm_game.stop_game()
-                    game_mode = False
-                    theory_mode = False
-                    print("Modo libre activado")
-                    ui_helper.reset_instructions()  # Mostrar instrucciones del modo libre
-                elif key == ord('l'):  # ========== MODO TEORÍA ==========
-                    theory_mode = True
-                    game_mode = False
-                    if rhythm_game.is_playing:
-                        rhythm_game.stop_game()
-                    theory_ui.reset_selection()
-                    print("¡Modo Teoría activado! Selecciona una lección. Presiona Q para salir.")
+                # Legacy keys n, g, f, l removed
                 elif key == ord('t'):  # Subir nivel de mesa (ESTÉREO: aumentar umbral de profundidad)
                     new_threshold = km.depth_threshold + 0.2
                     km.set_depth_threshold(new_threshold)

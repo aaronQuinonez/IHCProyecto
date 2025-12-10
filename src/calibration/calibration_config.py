@@ -17,7 +17,6 @@ class CalibrationConfig:
     CALIBRATION_DATA_DIR = BASE_DIR / "camcalibration"
     CALIBRATION_IMAGES_DIR = CALIBRATION_DATA_DIR / "images"
     CALIBRATION_FILE = CALIBRATION_DATA_DIR / "calibration.json"
-    STEREO_MAP_FILE = CALIBRATION_DATA_DIR / "stereoMap.xml"  # Archivo legacy (si existe)
     
     # ==================== TABLERO DE CALIBRACIÓN ====================
     # TABLERO ESTÁNDAR FIJO: 8x8 cuadrados = 7x7 esquinas internas

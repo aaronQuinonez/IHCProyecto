@@ -35,8 +35,9 @@ class AppConfig:
     
     # Ruta del soundfont - buscar en múltiples ubicaciones
     SOUNDFONT_PATHS = [
-        r"C:\CodingWindows\IHC_Proyecto_Fork\IHCProyecto\utils\fluid\FluidR3_GM.sf2",
+        r"utils/fluid/fluid/FluidR3_GM.sf2",
         r"utils/fluid/FluidR3_GM.sf2",
+        r"../utils/fluid/fluid/FluidR3_GM.sf2",
         r"../utils/fluid/FluidR3_GM.sf2",
     ]
     
@@ -68,15 +69,6 @@ class AppConfig:
     # ==================== PERFORMANCE ====================
     TARGET_FPS = 30                       # FPS objetivo de la aplicación
     ENABLE_PERFORMANCE_STATS = False      # Mostrar estadísticas de rendimiento
-    
-    # ==================== CONTROLS ====================
-    # Teclas de control de la aplicación
-    KEY_QUIT = ord('q')                   # Salir
-    KEY_DASHBOARD = ord('d')              # Toggle dashboard
-    KEY_RHYTHM_GAME = ord('g')            # Modo juego de ritmo
-    KEY_FREE_PLAY = ord('f')              # Modo libre
-    KEY_LEARN_MODE = ord('a')             # Modo aprendizaje
-    KEY_DEPTH_SHOW = ord('p')             # Mostrar profundidades
     
     # ==================== PATHS ====================
     # Directorio base del proyecto
@@ -185,33 +177,6 @@ class AppConfig:
         AppConfig.VERBOSE_HAND_DETECTION = enabled
         status = "activado" if enabled else "desactivado"
         print(f"✓ Modo debug {status}")
-    
-    @staticmethod
-    def get_key_bindings():
-        """Retorna diccionario con las teclas de control"""
-        return {
-            'quit': chr(AppConfig.KEY_QUIT),
-            'dashboard': chr(AppConfig.KEY_DASHBOARD),
-            'rhythm_game': chr(AppConfig.KEY_RHYTHM_GAME),
-            'free_play': chr(AppConfig.KEY_FREE_PLAY),
-            'learn_mode': chr(AppConfig.KEY_LEARN_MODE),
-            'show_depth': chr(AppConfig.KEY_DEPTH_SHOW),
-        }
-    
-    @staticmethod
-    def print_controls():
-        """Imprime los controles de la aplicación"""
-        bindings = AppConfig.get_key_bindings()
-        print("\n" + "="*60)
-        print("CONTROLES")
-        print("="*60)
-        print(f"[{bindings['quit']}] Salir")
-        print(f"[{bindings['dashboard']}] Toggle Dashboard")
-        print(f"[{bindings['rhythm_game']}] Juego de Ritmo")
-        print(f"[{bindings['free_play']}] Modo Libre")
-        print(f"[{bindings['learn_mode']}] Modo Aprendizaje")
-        print(f"[{bindings['show_depth']}] Mostrar Profundidades")
-        print("="*60 + "\n")
 
 
 # Crear directorios al importar el módulo

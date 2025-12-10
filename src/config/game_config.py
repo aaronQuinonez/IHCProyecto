@@ -87,13 +87,6 @@ class GameConfig:
     HAND_LOSS_GRACE_PERIOD = 2.0      # Segundos antes de pausar por pérdida de manos
     HAND_DETECTION_MESSAGE = "Esperando ambas manos..."
     
-    # ==================== SONG SELECTOR ====================
-    SELECTOR_PANEL_WIDTH = 400
-    SELECTOR_PANEL_HEIGHT_PER_SONG = 70
-    SELECTOR_TITLE_SIZE = 1.8
-    SELECTOR_SONG_SIZE = 0.8
-    SELECTOR_BPM_SIZE = 0.6
-    
     # ==================== MÉTODOS ====================
     
     @staticmethod

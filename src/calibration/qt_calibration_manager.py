@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import json
 import sys
+import time
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QTimer, pyqtSignal, QObject
 from pathlib import Path
@@ -464,7 +465,6 @@ class QtCalibrationManager(QObject):
             self.detection_frames = 0
         
         # Actualizar estado
-        import time
         current_time = time.time()
         can_capture = (current_time - self.last_capture_time) > 1.0
         
@@ -500,7 +500,6 @@ class QtCalibrationManager(QObject):
         
         # Resetear detección
         self.detection_frames = 0
-        import time
         self.last_capture_time = time.time()
         
         # Si tenemos suficientes pares, finalizar automáticamente

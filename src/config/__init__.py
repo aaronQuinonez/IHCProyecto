@@ -20,7 +20,6 @@ def print_all_configs():
     """Imprime todas las configuraciones del sistema"""
     AppConfig.print_config()
     GameConfig.print_config()
-    AppConfig.print_controls()
 
 
 def load_all_configurations():
