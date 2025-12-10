@@ -17,7 +17,7 @@ class RhythmLesson(BaseLesson):
     def __init__(self):
         super().__init__()
         self.name = "Ritmo y Tempo"
-        self.description = "Aprende duraciones de notas, tempo (BPM) y patrones rítmicos básicos"
+        self.description = "Aprende duraciones de notas, tempo (BPM) y patrones rítmicos"
         self.difficulty = "Básico"
         
         # Conceptos de duración (en beats)
@@ -29,13 +29,13 @@ class RhythmLesson(BaseLesson):
             ("Semicorchea", 0.25, "s", "1/4 tiempo")
         ]
         
-        # Patrones rítmicos comunes
+        # Patrones rítmicos (Nombre, [Lista de duraciones], Descripción)
         self.rhythm_patterns = [
-            ("Patrón básico", [1.0, 1.0, 1.0, 1.0], "4 negras"),
-            ("Blancas", [2.0, 2.0], "2 blancas"),
-            ("Corcheas", [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], "8 corcheas"),
-            ("Síncopa", [0.5, 1.0, 0.5, 1.0, 1.0], "Patrón sincopado"),
-            ("Tresillo", [0.33, 0.33, 0.34, 1.0], "Tresillos + negra")
+            ("Escala Rítmica", [1.0, 1.0, 1.0, 1.0], "4 Negras (un compás)"),
+            ("Blancas lentas", [2.0, 2.0], "2 Blancas"),
+            ("Corcheas rápidas", [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], "8 Corcheas"),
+            ("Síncopa Básica", [0.5, 1.0, 0.5, 1.0, 1.0], "Contratiempos"),
+            ("Tresillos", [0.33, 0.33, 0.34, 1.0, 1.0], "Tresillo + 2 Negras")
         ]
         
         # Tempos (BPM)
@@ -48,268 +48,237 @@ class RhythmLesson(BaseLesson):
             ("Presto", 180, "Muy rápido")
         ]
         
-        self.current_duration = 0
-        self.current_pattern = 0
-        self.current_tempo = 3  # Moderato por defecto
-        self.is_playing = False
-        self.beat_visual_timer = 0
-        self.last_beat_time = 0
+        # Estado inicial
+        self.current_duration_idx = 2  # Negra (1.0)
+        self.current_pattern_idx = 0
+        self.current_tempo_idx = 3     # Moderato (120 BPM)
+        self.bpm = 120
+        
+        # Estados de reproducción
+        self.play_state = None         # None, 'note', 'pattern'
+        self.start_time = 0
+        self.pattern_note_index = 0
+        self.last_beat_time = 0        # Para el metrónomo
+        
+        # Variables de visualización
+        self.active_midi_notes = []    # Notas iluminadas en el piano
         self.metronome_active = False
+        self.metronome_flash = False   # Para el destello visual del beat
+        
+        # Nota para el metrónomo (Do agudo - Canal 0)
+        self.METRONOME_NOTE = 96 
+        
+        self._update_ui_state()
     
-    def run(self, frame_left, frame_right, virtual_keyboard, synth, 
-            hand_detector_left=None, hand_detector_right=None):
-        """Ejecuta la lección de ritmo"""
+    def _update_ui_state(self):
+        """Actualiza la interfaz de texto"""
+        tempo_name, self.bpm, tempo_desc = self.tempos[self.current_tempo_idx]
+        note_name, duration, symbol, note_desc = self.note_durations[self.current_duration_idx]
+        pattern_name, pat_durs, pat_desc = self.rhythm_patterns[self.current_pattern_idx]
         
-        # Header
-        frame_left = self.draw_lesson_header(frame_left)
+        text = "--- TEMPO (Velocidad) ---\n"
+        text += f"Velocidad: {tempo_name} ({self.bpm} BPM)\n"
+        text += f"Metrónomo: {'ENCENDIDO (M)' if self.metronome_active else 'Apagado (M)'}\n\n"
         
-        tempo_name, bpm, tempo_desc = self.tempos[self.current_tempo]
+        text += "--- DURACIÓN DE NOTAS (1-5) ---\n"
+        text += f"Selección: {note_name.upper()}\n"
+        text += f"Valor: {note_desc} ({duration} beats)\n"
+        text += f"Duración real: {duration * (60.0/self.bpm):.2f} segundos\n\n"
         
-        instructions = [
-            "SECCION 1: Duraciones de Notas",
-            f"Duracion actual: {self.note_durations[self.current_duration][0]}",
-            f"  -> {self.note_durations[self.current_duration][3]}",
-            "",
-            f"SECCION 2: Tempo - {tempo_name} ({bpm} BPM)",
-            f"  -> {tempo_desc}",
-            "",
-            "Controles:",
-            "ESPACIO: Tocar nota con duracion actual",
-            "1-5: Cambiar duracion (1=Redonda, 5=Semicorchea)",
-            "M: Activar/desactivar metronomo",
-            "P: Reproducir patron ritmico",
-            "+/-: Aumentar/disminuir tempo",
-            "N: Siguiente patron"
-        ]
-        frame_left = self.draw_instructions(frame_left, instructions, y_start=80)
+        text += "--- PATRÓN RÍTMICO ---\n"
+        text += f"Patrón: {pattern_name}\n"
+        text += f"Detalle: {pat_desc}\n\n"
         
-        # Visualización de duraciones
-        self._draw_note_duration_chart(frame_left)
+        text += "--- CONTROLES ---\n"
+        text += "• ESPACIO: Tocar nota seleccionada\n"
+        text += "• 1-5: Cambiar duración (Redonda..Semicorchea)\n"
+        text += "• M: Activar/Desactivar Metrónomo\n"
+        text += "• P: Reproducir patrón rítmico\n"
+        text += "• +/-: Cambiar velocidad (Tempo)\n"
+        text += "• N: Cambiar patrón\n"
         
-        # Visualización de tempo
-        self._draw_tempo_indicator(frame_left, bpm)
+        self._instructions = text
+        self._custom_info = f"BPM: {self.bpm} | Nota: {note_name}"
+
+    def run(self, frame_left, frame_right, virtual_keyboard, synth, hand_detector_left=None, hand_detector_right=None):
+        """Ejecuta la lógica del frame (Metrónomo + Reproducción + Visuales)"""
+        current_time = time.time()
+        beat_duration = 60.0 / self.bpm  # Segundos por beat
         
-        # Metrónomo visual
+        # --- 1. LÓGICA DEL METRÓNOMO (Independiente) ---
         if self.metronome_active:
-            self._draw_metronome_beat(frame_left, bpm)
+            if current_time - self.last_beat_time >= beat_duration:
+                # ¡BEAT!
+                self.last_beat_time = current_time
+                self.metronome_flash = True
+                
+                # Sonido de click (Simulado con nota aguda de piano)
+                # Usamos canal 0 (piano) nota 96, volumen fuerte (120)
+                synth.noteon(0, self.METRONOME_NOTE, 120)
         
-        # Frame derecho - Patrón rítmico
-        frame_right = self.draw_lesson_header(frame_right, "Patrones Ritmicos")
-        self._draw_rhythm_pattern(frame_right)
+        # Reset visual y sonoro del metrónomo después de 100ms (para que sea corto)
+        if self.metronome_flash and (current_time - self.last_beat_time > 0.1):
+            self.metronome_flash = False
+            synth.noteoff(0, self.METRONOME_NOTE)
+
+        # --- 2. LÓGICA DE REPRODUCCIÓN (Nota o Patrón) ---
         
+        # A) Reproducir UNA nota (Espacio)
+        if self.play_state == 'note':
+            _, dur_beats, _, _ = self.note_durations[self.current_duration_idx]
+            duration_sec = dur_beats * beat_duration
+            elapsed = current_time - self.start_time
+            
+            if elapsed < duration_sec:
+                # Mantener nota sonando
+                note = 60 # Do Central
+                if note not in self.active_midi_notes:
+                    synth.noteon(0, note, 100)
+                    self.active_midi_notes = [note]
+            else:
+                # Terminar nota
+                self._stop_all_notes(synth)
+                self.play_state = None
+
+        # B) Reproducir PATRÓN (P)
+        elif self.play_state == 'pattern':
+            _, pat_durs, _ = self.rhythm_patterns[self.current_pattern_idx]
+            
+            # Calcular en qué nota del patrón deberíamos estar
+            elapsed_total = current_time - self.start_time
+            accumulated_time = 0
+            found_note = False
+            
+            for i, d_beat in enumerate(pat_durs):
+                d_sec = d_beat * beat_duration
+                
+                # Intervalo de tiempo de esta nota específica
+                start_n = accumulated_time
+                end_n = accumulated_time + d_sec
+                
+                if start_n <= elapsed_total < end_n:
+                    # Estamos dentro del tiempo de la nota 'i'
+                    found_note = True
+                    
+                    # Si cambiamos de nota, actualizar sonido
+                    if self.pattern_note_index != i:
+                        self._stop_all_notes(synth)
+                        # Usar escala para variar notas: Do, Re, Mi, Fa...
+                        note = 60 + [0, 2, 4, 5, 7, 9, 11, 12][i % 8]
+                        synth.noteon(0, note, 100)
+                        self.active_midi_notes = [note]
+                        self.pattern_note_index = i
+                    break
+                
+                accumulated_time += d_sec
+            
+            if not found_note:
+                # El patrón terminó
+                self._stop_all_notes(synth)
+                self.play_state = None
+
+        # --- 3. VISUALIZACIÓN ---
+        
+        # A) Dibujar indicador de Metrónomo (Círculo pulsante)
+        if self.metronome_active:
+            color = (0, 255, 0) if self.metronome_flash else (50, 50, 50)
+            radius = 20 if self.metronome_flash else 15
+            # Esquina superior derecha
+            cv2.circle(frame_left, (frame_left.shape[1] - 50, 50), radius, color, -1)
+            cv2.circle(frame_left, (frame_left.shape[1] - 50, 50), radius, (255, 255, 255), 2)
+            if self.metronome_flash:
+                cv2.putText(frame_left, "BEAT", (frame_left.shape[1] - 90, 90), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+        # B) Resaltar teclas en el piano
+        if virtual_keyboard and self.active_midi_notes:
+            for midi_note in self.active_midi_notes:
+                key_props = self._get_key_visual_props(virtual_keyboard, midi_note)
+                if key_props:
+                    (x, y, w, h), color = key_props
+                    
+                    # Overlay
+                    overlay = frame_left.copy()
+                    cv2.rectangle(overlay, (x, y), (x+w, y+h), color, -1)
+                    cv2.addWeighted(overlay, 0.6, frame_left, 0.4, 0, frame_left)
+                    
+                    # Borde
+                    cv2.rectangle(frame_left, (x, y), (x+w, y+h), (255, 255, 255), 2)
+
         return frame_left, frame_right, True
     
-    def _draw_note_duration_chart(self, frame):
-        """Dibuja tabla de duraciones de notas"""
-        y = 320
-        x_start = 20
+    def _get_key_visual_props(self, vk, midi_note):
+        """Calcula coordenadas visuales de la tecla"""
+        offset = midi_note - 60
+        if offset < 0 or offset > 23: return None
         
-        cv2.putText(frame, "Duraciones:", (x_start, y),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1, cv2.LINE_AA)
+        white_map = {0:0, 2:1, 4:2, 5:3, 7:4, 9:5, 11:6, 12:7, 14:8, 16:9, 17:10, 19:11, 21:12, 23:13}
+        black_map = {1:0, 3:1, 6:3, 8:4, 10:5, 13:7, 15:8, 18:10, 20:11, 22:12}
         
-        y += 30
-        for i, (name, duration, symbol, desc) in enumerate(self.note_durations):
-            color = (100, 255, 100) if i == self.current_duration else (180, 180, 180)
-            
-            # Nombre
-            text = f"{i+1}. {name:12} {symbol}  ({desc})"
-            cv2.putText(frame, text, (x_start + 10, y),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
-            
-            # Barra visual proporcional
-            bar_width = int(duration * 40)
-            cv2.rectangle(frame, (x_start + 300, y - 10), 
-                         (x_start + 300 + bar_width, y), color, -1)
-            
-            y += 25
-    
-    def _draw_tempo_indicator(self, frame, bpm):
-        """Dibuja indicador de tempo"""
-        y = 320
-        x = 420
-        
-        cv2.putText(frame, "Tempo (BPM):", (x, y),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1, cv2.LINE_AA)
-        
-        y += 40
-        cv2.putText(frame, str(bpm), (x + 30, y),
-                   cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 200, 0), 2, cv2.LINE_AA)
-        
-        # Indicador visual de velocidad
-        y += 40
-        tempo_bar_width = int((bpm / 200.0) * 150)
-        cv2.rectangle(frame, (x, y), (x + 150, y + 15), (50, 50, 50), -1)
-        cv2.rectangle(frame, (x, y), (x + tempo_bar_width, y + 15), (255, 200, 0), -1)
-        cv2.rectangle(frame, (x, y), (x + 150, y + 15), (200, 200, 200), 1)
-        
-        # Etiquetas
-        y += 35
-        cv2.putText(frame, "Lento", (x, y),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (150, 150, 150), 1, cv2.LINE_AA)
-        cv2.putText(frame, "Rapido", (x + 110, y),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (150, 150, 150), 1, cv2.LINE_AA)
-    
-    def _draw_metronome_beat(self, frame, bpm):
-        """Dibuja beat visual del metrónomo"""
-        current_time = time.time()
-        beat_interval = 60.0 / bpm  # Segundos por beat
-        
-        # Calcular si estamos en un beat
-        time_in_measure = (current_time % (beat_interval * 4))
-        beat_number = int(time_in_measure / beat_interval) + 1
-        
-        # Efecto visual de pulso
-        time_since_beat = time_in_measure % beat_interval
-        pulse_intensity = max(0, 1.0 - (time_since_beat / beat_interval))
-        
-        x = 550
-        y = 80
-        
-        # Círculo pulsante
-        radius = int(20 + pulse_intensity * 10)
-        color_intensity = int(100 + pulse_intensity * 155)
-        color = (color_intensity, color_intensity, 0) if beat_number == 1 else (0, color_intensity, 0)
-        
-        cv2.circle(frame, (x, y), radius, color, -1)
-        cv2.circle(frame, (x, y), radius, (255, 255, 255), 2)
-        
-        # Número de beat
-        cv2.putText(frame, str(beat_number), (x - 8, y + 8),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
-    
-    def _draw_rhythm_pattern(self, frame, y_start=120):
-        """Dibuja el patrón rítmico actual"""
-        h, w = frame.shape[:2]
-        
-        pattern_name, durations, description = self.rhythm_patterns[self.current_pattern]
-        
-        cv2.putText(frame, f"Patron: {pattern_name}", (50, y_start),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
-        
-        cv2.putText(frame, description, (50, y_start + 40),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1, cv2.LINE_AA)
-        
-        # Representación gráfica del patrón
-        y = y_start + 80
-        x_start = 50
-        total_duration = sum(durations)
-        available_width = w - 100
-        
-        x = x_start
-        for i, duration in enumerate(durations):
-            # Ancho proporcional a la duración
-            note_width = int((duration / total_duration) * available_width)
-            
-            # Color según duración
-            if duration >= 2.0:
-                color = (100, 100, 255)  # Azul para notas largas
-            elif duration >= 1.0:
-                color = (100, 255, 100)  # Verde para negras
-            elif duration >= 0.5:
-                color = (255, 200, 100)  # Naranja para corcheas
-            else:
-                color = (255, 100, 100)  # Rojo para semicorcheas
-            
-            # Dibujar nota
-            cv2.rectangle(frame, (x, y), (x + note_width - 5, y + 40), color, -1)
-            cv2.rectangle(frame, (x, y), (x + note_width - 5, y + 40), (255, 255, 255), 2)
-            
-            # Etiqueta de duración
-            dur_text = f"{duration:.2f}".rstrip('0').rstrip('.')
-            cv2.putText(frame, dur_text, (x + 5, y + 25),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 1, cv2.LINE_AA)
-            
-            x += note_width
-        
-        # Información adicional
-        y += 70
-        cv2.putText(frame, f"Total: {total_duration:.1f} tiempos", (50, y),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1, cv2.LINE_AA)
-        
-        y += 30
-        tempo_name, bpm, tempo_desc = self.tempos[self.current_tempo]
-        total_seconds = (total_duration / bpm) * 60
-        cv2.putText(frame, f"Duracion: {total_seconds:.2f} segundos a {bpm} BPM", (50, y),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1, cv2.LINE_AA)
-    
+        if offset in white_map:
+            idx = white_map[offset]
+            return (int(vk.kb_x0 + idx*vk.white_key_width), int(vk.kb_y0), 
+                    int(vk.white_key_width), int(vk.kb_y1-vk.kb_y0)), (255, 255, 0)
+        elif offset in black_map:
+            idx = black_map[offset]
+            x_center = vk.kb_x0 + vk.white_key_width * (idx + 1)
+            idx_mod = idx % 7
+            if idx_mod in (0, 3, 4): x = x_center - vk.black_key_width*(2/3)
+            elif idx_mod in (1, 5): x = x_center - vk.black_key_width*(1/3)
+            else: x = x_center - vk.black_key_width/2
+            return (int(x), int(vk.kb_y0), int(vk.black_key_width), int(vk.black_key_heigth)), (255, 0, 255)
+        return None
+
     def handle_key(self, key, synth, octave_base=60):
-        """Maneja teclas de la lección"""
+        """Maneja las teclas de control"""
         
-        # Cambiar duración con números 1-5
-        if 49 <= key <= 53:  # Teclas 1-5
-            self.current_duration = key - 49
-            print(f"Duración: {self.note_durations[self.current_duration][0]}")
+        # 1-5: Cambiar Duración
+        if 49 <= key <= 53: 
+            self.current_duration_idx = key - 49
+            self._update_ui_state()
             return True
         
-        # Tocar nota con duración actual
+        # ESPACIO: Tocar nota
         elif key == ord(' '):
-            note_name, duration, symbol, desc = self.note_durations[self.current_duration]
-            tempo_name, bpm, tempo_desc = self.tempos[self.current_tempo]
-            
-            # Calcular duración en segundos según tempo
-            beat_duration = 60.0 / bpm  # Duración de 1 beat en segundos
-            note_duration_seconds = duration * beat_duration
-            
-            print(f"Tocando {note_name} ({duration} beats = {note_duration_seconds:.2f}s a {bpm} BPM)")
-            
-            note = octave_base
-            synth.noteon(0, note, 100)
-            time.sleep(note_duration_seconds)
-            synth.noteoff(0, note)
-            
+            self._stop_all_notes(synth)
+            self.play_state = 'note'
+            self.start_time = time.time()
             return True
         
-        # Metrónomo
+        # M: Metrónomo
         elif key == ord('m') or key == ord('M'):
             self.metronome_active = not self.metronome_active
-            status = "activado" if self.metronome_active else "desactivado"
-            print(f"Metrónomo {status}")
+            self.last_beat_time = time.time()
+            self._update_ui_state()
             return True
         
-        # Reproducir patrón rítmico
+        # P: Reproducir Patrón
         elif key == ord('p') or key == ord('P'):
-            self._play_rhythm_pattern(synth, octave_base)
+            self._stop_all_notes(synth)
+            self.play_state = 'pattern'
+            self.start_time = time.time()
+            self.pattern_note_index = -1
             return True
         
-        # Cambiar tempo
+        # +/-: Tempo
         elif key == ord('+') or key == ord('='):
-            self.current_tempo = min(len(self.tempos) - 1, self.current_tempo + 1)
-            tempo_name, bpm, tempo_desc = self.tempos[self.current_tempo]
-            print(f"Tempo: {tempo_name} ({bpm} BPM) - {tempo_desc}")
+            self.current_tempo_idx = min(len(self.tempos)-1, self.current_tempo_idx + 1)
+            self._update_ui_state()
             return True
-        
         elif key == ord('-') or key == ord('_'):
-            self.current_tempo = max(0, self.current_tempo - 1)
-            tempo_name, bpm, tempo_desc = self.tempos[self.current_tempo]
-            print(f"Tempo: {tempo_name} ({bpm} BPM) - {tempo_desc}")
+            self.current_tempo_idx = max(0, self.current_tempo_idx - 1)
+            self._update_ui_state()
             return True
         
-        # Siguiente patrón
+        # N: Siguiente Patrón
         elif key == ord('n') or key == ord('N'):
-            self.current_pattern = (self.current_pattern + 1) % len(self.rhythm_patterns)
-            pattern_name = self.rhythm_patterns[self.current_pattern][0]
-            print(f"Patrón: {pattern_name}")
+            self.current_pattern_idx = (self.current_pattern_idx + 1) % len(self.rhythm_patterns)
+            self._update_ui_state()
             return True
-        
-        return False
-    
-    def _play_rhythm_pattern(self, synth, octave_base):
-        """Reproduce el patrón rítmico actual"""
-        pattern_name, durations, description = self.rhythm_patterns[self.current_pattern]
-        tempo_name, bpm, tempo_desc = self.tempos[self.current_tempo]
-        
-        print(f"Reproduciendo patrón: {pattern_name} a {bpm} BPM")
-        
-        beat_duration = 60.0 / bpm
-        note = octave_base
-        
-        for i, duration in enumerate(durations):
-            note_duration_seconds = duration * beat_duration
             
-            # Tocar nota
-            synth.noteon(0, note + (i % 3), 100)  # Variar ligeramente el tono
-            time.sleep(note_duration_seconds * 0.9)  # 90% para articulación
-            synth.noteoff(0, note + (i % 3))
-            time.sleep(note_duration_seconds * 0.1)  # 10% de silencio
-        
-        print("Patrón completado")
+        return False
+
+    def _stop_all_notes(self, synth):
+        if self.active_midi_notes:
+            for n in self.active_midi_notes: synth.noteoff(0, n)
+        self.active_midi_notes = []
