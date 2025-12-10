@@ -267,7 +267,11 @@ class LessonWindow(QMainWindow):
         if frame_left is None or frame_right is None:
             return
         
-        # Procesar teclado virtual (si está habilitado)
+        # --- CORRECCIÓN ESPEJO ---
+        # Voltear el frame horizontalmente AHORA, antes de procesar nada.
+        frame_left = cv2.flip(frame_left, 1)
+        
+        # Procesar teclado virtual (usando el frame ya corregido)
         if self.keyboard_processor and self.hand_detector_left and self.hand_detector_right:
             try:
                 frame_left, frame_right = self.keyboard_processor.process_and_play(
@@ -284,7 +288,6 @@ class LessonWindow(QMainWindow):
         
         # Ejecutar lógica de la lección
         try:
-            # Llamamos a run() pasando el synth para que suenen las notas
             frame_left, frame_right, _ = self.lesson.run(
                 frame_left, frame_right, 
                 self.virtual_keyboard, self.synth,
@@ -307,10 +310,7 @@ class LessonWindow(QMainWindow):
             
         except Exception as e:
             print(f"Error ejecutando lección: {e}")
-        
-        # Aplicar flip horizontal para corregir efecto espejo en la visualización
-        frame_left = cv2.flip(frame_left, 1)
-        
+                
         # Mostrar solo frame izquierdo
         self._display_frame(frame_left)
     
