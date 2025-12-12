@@ -167,8 +167,19 @@ class FreeModeWindow(QMainWindow):
         
         if frame_left is None: return
 
-        # Flip horizontal (Modo Espejo)
-        frame_left = cv2.flip(frame_left, 1)
+        # Importar configuración estéreo (compartida por todos los modos)
+        from src.vision.stereo_config import StereoConfig
+
+        # === Lógica de visualización unificada ===
+        # 1) Si la cámara está físicamente rotada 180°: aplicamos flip(-1)
+        #    (rota 180° y corrige también el espejo horizontal).
+        # 2) Solo si NO está rotada y MIRROR_HORIZONTAL=True aplicamos efecto espejo.
+        if getattr(StereoConfig, 'ROTATE_CAMERAS_180', False):
+            frame_left = cv2.flip(frame_left, -1)
+            frame_right = cv2.flip(frame_right, -1)
+        elif getattr(StereoConfig, 'MIRROR_HORIZONTAL', False):
+            frame_left = cv2.flip(frame_left, 1)
+            
         # frame_right se usa para profundidad, no visualización directa
         
         # 2. PROCESAMIENTO PERSONALIZADO 
@@ -198,8 +209,23 @@ class FreeModeWindow(QMainWindow):
                 for fl in hl_tips:
                     for fr in hr_tips:
                         if fl[0] == fr[0] and fl[1] == fr[1]: # Mismo dedo
-                            # Lógica simple de angulos si no hay depth estimator complejo a mano
-                            if self.angler:
+                            # Usar DepthEstimator si está disponible (Recomendado)
+                            if self.depth_estimator:
+                                # 1. Rectificar puntos
+                                pt_left = (fl[2], fl[3])
+                                pt_right = (fr[2], fr[3])
+                                pt_l_rect = self.depth_estimator.rectify_point(pt_left, 'left')
+                                pt_r_rect = self.depth_estimator.rectify_point(pt_right, 'right')
+                                
+                                # 2. Triangular
+                                point_3d = self.depth_estimator.triangulate_point(pt_l_rect, pt_r_rect)
+                                
+                                if point_3d:
+                                    depth = point_3d[2] # Z
+                                    finger_depths_dict[(fl[0], fl[1])] = depth
+
+                            # Fallback a lógica antigua si no hay DepthEstimator
+                            elif self.angler:
                                 xl, yl = self.angler.angles_from_center(x=fl[2], y=fl[3], top_left=True, degrees=True)
                                 xr, yr = self.angler.angles_from_center(x=fr[2], y=fr[3], top_left=True, degrees=True)
                                 _, _, Z, D = self.angler.location(

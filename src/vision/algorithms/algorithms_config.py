@@ -13,7 +13,7 @@ ALGORITHMS_CONFIG = {
     # ALGORITMO 1: Anti-rebote (Debouncing)
     # Previene activaciones múltiples rápidas de la misma tecla
     'Antirebote': {
-        'enabled': True,  # ✓ Activar / ✗ Desactivar
+        'enabled': False,  
         'params': {
             'debounce_time': 0.05  # Tiempo mínimo (s) entre activaciones (0.03-0.10)
         }
@@ -22,7 +22,7 @@ ALGORITHMS_CONFIG = {
     # ALGORITMO 2: Histéresis
     # Usa umbrales diferentes para presionar y soltar teclas
     'Histéresis': {
-        'enabled': True,  # ✓ Activar / ✗ Desactivar
+        'enabled': False,  
         'params': {
             'press_threshold': 3.0,    # Profundidad (cm) para activar (2.0-4.0)
             'release_threshold': 4.0   # Profundidad (cm) para liberar (3.0-5.0)
@@ -32,7 +32,7 @@ ALGORITHMS_CONFIG = {
     # ALGORITMO 3: Suavizado de velocidad
     # Calcula velocidad promediando múltiples mediciones
     'Suavizado': {
-        'enabled': True,  # ✓ Activar / ✗ Desactivar
+        'enabled': False, 
         'params': {
             'smoothing_window': 7  # Número de mediciones para promediar (3-10)
         }
@@ -41,7 +41,7 @@ ALGORITHMS_CONFIG = {
     # ALGORITMO 4: Multi-nota (Acordes)
     # Detecta cuando múltiples teclas se presionan simultáneamente
     'Multi-nota': {
-        'enabled': True,  # ✓ Activar / ✗ Desactivar
+        'enabled': False,  
         'params': {
             'simultaneous_window': 0.05  # Ventana temporal (s) para acordes (0.03-0.10)
         }
@@ -50,7 +50,7 @@ ALGORITHMS_CONFIG = {
     # ALGORITMO 5: Filtrado espacial
     # Previene que dedos cercanos activen múltiples teclas adyacentes
     'Filtro Espacial': {
-        'enabled': False,  # ✓ Activar / ✗ Desactivar
+        'enabled': False,  
         'params': {
             'min_finger_distance': 35,      # Distancia mínima (px) entre dedos (25-50)
             'adjacent_keys_threshold': 2    # Máxima distancia (teclas) considerada adyacente (1-3)
@@ -60,7 +60,7 @@ ALGORITHMS_CONFIG = {
     # ALGORITMO 8: Zona de salida
     # Previene titubeo cuando el dedo sale del borde inferior del teclado
     'Zona Salida': {
-        'enabled': False,  # ✓ Activar / ✗ Desactivar (OFF por defecto)
+        'enabled': False,  
         'params': {
             'exit_zone_margin': 30,    # Margen (px) desde borde inferior (20-50)
             'exit_grace_time': 0.3     # Tiempo de gracia (s) para confirmar salida (0.2-0.5)
@@ -68,16 +68,6 @@ ALGORITHMS_CONFIG = {
     }
 }
 
-# ==============================================================================
-# ORDEN DE EJECUCIÓN
-# ==============================================================================
-# Los algoritmos se ejecutan en este orden:
-# 1. Antirebote      → Filtra rebotes temporales
-# 2. Histéresis      → Aplica umbrales inteligentes
-# 3. Suavizado       → Reduce jitter en velocidad
-# 4. Filtro Espacial → Resuelve conflictos de dedos cercanos
-# 5. Zona Salida     → Previene titubeo en bordes
-# 6. Multi-nota      → Detecta acordes (no filtra, solo registra)
 
 EXECUTION_ORDER = [
     'Antirebote',
@@ -87,10 +77,6 @@ EXECUTION_ORDER = [
     'Zona Salida',
     'Multi-nota'
 ]
-
-# ==============================================================================
-# PRESETS RÁPIDOS
-# ==============================================================================
 
 PRESETS = {
     'default': {

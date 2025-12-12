@@ -243,6 +243,16 @@ class CalibrationWindow(QMainWindow):
             frame_left: Frame de cámara izquierda (BGR)
             frame_right: Frame de cámara derecha (BGR)
         """
+        # Importar configuración estéreo
+        from src.vision.stereo_config import StereoConfig
+
+        # Rotación 180 grados si es necesario (cámaras invertidas)
+        if hasattr(StereoConfig, 'ROTATE_CAMERAS_180') and StereoConfig.ROTATE_CAMERAS_180:
+            if frame_left is not None:
+                frame_left = cv2.flip(frame_left, -1)
+            if frame_right is not None:
+                frame_right = cv2.flip(frame_right, -1)
+
         if frame_left is not None:
             self._display_frame(frame_left, self.camera_left_label)
         
@@ -377,9 +387,9 @@ class CalibrationWindow(QMainWindow):
             total_steps: Total de pasos
         """
         html = "<h3 style='color: #00FF00;'>CALIBRACIÓN DE PROFUNDIDAD</h3>"
-        html += f"<p style='font-size: 16px; margin: 10px 0;'><b>Coloca tu DEDO ÍNDICE a {target_distance} cm de la cámara</b></p>"
+        html += f"<p style='font-size: 16px; margin: 10px 0;'><b>Coloca tu DEDO ÍNDICE a {target_distance} cm de la CÁMARA IZQUIERDA</b></p>"
         html += "<ul>"
-        html += "<li>Usa una regla para medir la distancia exacta</li>"
+        html += "<li>Usa una regla para medir la distancia exacta desde el lente izquierdo</li>"
         html += "<li>Mantén el dedo quieto</li>"
         html += "<li>Presiona CAPTURAR cuando esté en posición</li>"
         html += "</ul>"

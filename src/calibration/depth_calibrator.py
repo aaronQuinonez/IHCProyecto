@@ -39,9 +39,6 @@ class DepthCalibrator:
         self.width = width
         self.height = height
         
-        # Distancias de referencia para medir (en cm)
-        self.reference_distances = [25, 30, 35, 40]
-        
         # Resultados de mediciones
         self.measurements = []  # [(distancia_real, distancia_medida), ...]
         

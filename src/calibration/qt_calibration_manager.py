@@ -10,7 +10,7 @@ import numpy as np
 import json
 import sys
 import time
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QInputDialog
 from PyQt6.QtCore import QTimer, pyqtSignal, QObject
 from pathlib import Path
 
@@ -280,6 +280,14 @@ class QtCalibrationManager(QObject):
         if not ret:
             return
         
+        # Importar configuración estéreo
+        from ..vision.stereo_config import StereoConfig
+
+        # Rotación 180 grados si es necesario (cámaras invertidas)
+        # Usamos flip(-1) para volver a la orientación real (sin espejo).
+        if hasattr(StereoConfig, 'ROTATE_CAMERAS_180') and StereoConfig.ROTATE_CAMERAS_180:
+            frame = cv2.flip(frame, -1)
+
         # Detectar tablero
         detected, corners, frame_overlay = self.current_calibrator.detect_chessboard(frame)
         
@@ -447,6 +455,14 @@ class QtCalibrationManager(QObject):
         if not ret_left or not ret_right:
             return
         
+        # Importar configuración estéreo
+        from ..vision.stereo_config import StereoConfig
+
+        # Rotación 180 grados si es necesario (cámaras invertidas)
+        if hasattr(StereoConfig, 'ROTATE_CAMERAS_180') and StereoConfig.ROTATE_CAMERAS_180:
+            frame_left = cv2.flip(frame_left, -1)
+            frame_right = cv2.flip(frame_right, -1)
+
         # Detectar tablero en ambas cámaras
         detected_both, corners_left, corners_right, display_left, display_right = \
             self.stereo_calibrator.detect_chessboard_pair(frame_left, frame_right)
@@ -556,7 +572,8 @@ class QtCalibrationManager(QObject):
         instructions = [
             "Finalmente, calibraremos la <b>profundidad</b>",
             "Necesitarás mostrar tu <b>mano</b> a la cámara",
-            "Coloca tu mano a diferentes distancias conocidas (ej. 30cm, 50cm, 70cm)",
+            "Podrás ingresar las distancias que deseas medir",
+            "<b>IMPORTANTE:</b> Mide la distancia desde la <b>Cámara Izquierda</b>",
             "El sistema detectará los puntos clave de tu mano",
             "Capturaremos varias mediciones para ajustar el modelo"
         ]
@@ -584,9 +601,29 @@ class QtCalibrationManager(QObject):
             # Inicializar calibrador de profundidad
             self.depth_calibrator = DepthCalibrator(self.depth_estimator)
             
-            # Definir distancias objetivo
-            self.depth_distances = [30, 50, 70]
+            # Pedir distancias al usuario
+            distances_str, ok = QInputDialog.getText(
+                self.window, 
+                "Configurar Distancias",
+                "Ingresa las distancias a medir en cm (separadas por coma):",
+                text="30, 40, 50, 60"
+            )
             
+            if ok and distances_str:
+                try:
+                    self.depth_distances = [float(d.strip()) for d in distances_str.split(',') if d.strip()]
+                    self.depth_distances.sort()
+                except ValueError:
+                    print("⚠ Error en formato de distancias, usando por defecto")
+                    self.depth_distances = [30, 40, 50, 60]
+            else:
+                # Si cancela o vacío, usar por defecto
+                self.depth_distances = [30, 40, 50, 60]
+            
+            if len(self.depth_distances) < 3:
+                 print("⚠ Se recomiendan al menos 3 distancias. Agregando valores por defecto.")
+                 self.depth_distances = [30, 40, 50, 60]
+
             # Mostrar estado
             self.window.set_status("Iniciando cámaras para profundidad...", "#FFA500")
             QApplication.processEvents()
@@ -641,7 +678,15 @@ class QtCalibrationManager(QObject):
         
         if not ret_left or not ret_right:
             return
-            
+        
+        # Importar configuración estéreo
+        from ..vision.stereo_config import StereoConfig
+
+        # Rotación 180 grados si es necesario (cámaras invertidas)
+        if hasattr(StereoConfig, 'ROTATE_CAMERAS_180') and StereoConfig.ROTATE_CAMERAS_180:
+            frame_left = cv2.flip(frame_left, 0)
+            frame_right = cv2.flip(frame_right, 0)
+
         # Copias para visualización
         display_left = frame_left.copy()
         display_right = frame_right.copy()

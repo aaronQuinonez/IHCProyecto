@@ -86,7 +86,7 @@ class AppConfig:
         AppConfig.SONGS_DIR.mkdir(exist_ok=True)
         AppConfig.CALIBRATION_DIR.mkdir(exist_ok=True)
     
-    # ==================== DEBUG ====================
+    # ==================== DEBUG ==================== 
     DEBUG_MODE = False                    # Modo debug (más logging)
     VERBOSE_HAND_DETECTION = False        # Logging detallado de detección
     

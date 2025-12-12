@@ -74,6 +74,9 @@ class VirtualKeyboard():
         return key_id, self.rectangle
 
     def draw_virtual_keyboard(self, img):
+        # Reiniciar divisiones de zona superior para evitar duplicados y fugas de memoria
+        self.upper_zone_divisions = []
+
         # Prepara shapes (Fondo blanco semitransparente para las teclas)
         shapes = np.zeros_like(img, np.uint8)
         cv2.rectangle(
@@ -126,7 +129,8 @@ class VirtualKeyboard():
 
                 self.new_key(p, (b_bk_x0, self.kb_y0),
                              (b_bk_x1, int(round_half_up(self.kb_y0 + self.black_key_heigth))))
-                self.upper_zone_divisions.append(self.rectangle)
+                # Guardar tupla (id_tecla, rectangulo) para que find_key_in_upper_zone funcione correctamente
+                self.upper_zone_divisions.append((p, self.rectangle))
 
             # --- LÍNEAS SEPARADORAS DE TECLAS BLANCAS ---
             cv2.line(img=img,

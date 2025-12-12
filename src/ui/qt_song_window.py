@@ -123,106 +123,121 @@ class SongWindow(QMainWindow):
         self._start_game()
     
     def _build_ui(self):
-        """Construye la interfaz de usuario"""
+        """Construye la interfaz de usuario (similar a modo Teoría)."""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        
+
         main_layout = QVBoxLayout(central_widget)
         main_layout.setSpacing(10)
-        main_layout.setContentsMargins(10, 10, 10, 10)
-        
-        # Cabecera eliminada - no es necesaria
-        
-        # ========== ÁREA DE CÁMARAS (con notas dibujadas) ==========
+        main_layout.setContentsMargins(15, 15, 15, 15)
+
+        # ========== ENCABEZADO ==========
+        header_layout = QHBoxLayout()
+
+        title_label = QLabel(self.song.name)
+        title_label.setObjectName("title")
+        header_layout.addWidget(title_label)
+
+        header_layout.addStretch()
+
+        subtitle_label = QLabel("Modo Ritmo")
+        subtitle_label.setObjectName("info")
+        header_layout.addWidget(subtitle_label)
+
+        main_layout.addLayout(header_layout)
+
+        # ========== CONTENIDO PRINCIPAL (Cámara + Panel derecho) ==========
+        content_layout = QHBoxLayout()
+
+        # --- Panel izquierdo: Cámara ---
+        camera_container = QVBoxLayout()
+
         camera_frame = QFrame()
         camera_frame.setObjectName("cameraFrame")
-        camera_layout = QVBoxLayout(camera_frame)
-        camera_layout.setContentsMargins(0, 0, 0, 0)
-        
+        camera_frame_layout = QVBoxLayout(camera_frame)
+
         self.camera_label = QLabel()
         self.camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.camera_label.setMinimumSize(1280, 480)
-        camera_layout.addWidget(self.camera_label)
-        
-        main_layout.addWidget(camera_frame, 1)
-        
-        # ========== ESTADÍSTICAS DE PUNTUACIÓN ==========
-        stats_layout = QVBoxLayout()
-        stats_layout.setSpacing(10)
-        
-        stats_title = QLabel("ESTADÍSTICAS:")
+        self.camera_label.setMinimumSize(640, 480)
+        self.camera_label.setScaledContents(False)
+        camera_frame_layout.addWidget(self.camera_label)
+
+        camera_container.addWidget(camera_frame)
+        content_layout.addLayout(camera_container, 3)
+
+        # --- Panel derecho: Estadísticas de la canción ---
+        info_panel = QVBoxLayout()
+        info_panel.setSpacing(15)
+
+        stats_title = QLabel("Estadísticas de la canción")
         stats_title.setObjectName("info")
         stats_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #ffffff;")
-        stats_layout.addWidget(stats_title)
-        
+        info_panel.addWidget(stats_title)
+
         # Score grande
         self.score_label = QLabel("Score: 0")
         self.score_label.setObjectName("score")
-        self.score_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #00ff00;")
-        stats_layout.addWidget(self.score_label)
-        
+        info_panel.addWidget(self.score_label)
+
         # Combo
         self.combo_label = QLabel("Combo: 0x")
         self.combo_label.setObjectName("info")
         self.combo_label.setStyleSheet("font-size: 16px; color: #00ffff;")
-        stats_layout.addWidget(self.combo_label)
-        
-        # Estadísticas detalladas
+        info_panel.addWidget(self.combo_label)
+
+        # Estadísticas detalladas (grid)
         stats_grid = QGridLayout()
         stats_grid.setSpacing(5)
-        
+
         self.perfect_label = QLabel("PERFECT: 0")
         self.perfect_label.setObjectName("info")
         self.perfect_label.setStyleSheet("color: #00ff00;")
         stats_grid.addWidget(self.perfect_label, 0, 0)
-        
+
         self.good_label = QLabel("GOOD: 0")
         self.good_label.setObjectName("info")
         self.good_label.setStyleSheet("color: #ffff00;")
         stats_grid.addWidget(self.good_label, 0, 1)
-        
+
         self.miss_label = QLabel("MISS: 0")
         self.miss_label.setObjectName("info")
         self.miss_label.setStyleSheet("color: #ff0000;")
         stats_grid.addWidget(self.miss_label, 1, 0)
-        
+
         self.accuracy_label = QLabel("Precisión: 0%")
         self.accuracy_label.setObjectName("info")
         self.accuracy_label.setStyleSheet("color: #ffffff;")
         stats_grid.addWidget(self.accuracy_label, 1, 1)
-        
-        stats_layout.addLayout(stats_grid)
-        
-        # ========== BARRA DE PROGRESO ==========
-        progress_layout = QHBoxLayout()
-        progress_label = QLabel("Progreso:")
+
+        info_panel.addLayout(stats_grid)
+
+        # Progreso de canción
+        progress_label = QLabel("Progreso de la canción:")
         progress_label.setObjectName("info")
-        progress_layout.addWidget(progress_label)
-        
+        info_panel.addWidget(progress_label)
+
         self.progress_bar = QProgressBar()
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
-        progress_layout.addWidget(self.progress_bar, 1)
-        
-        stats_layout.addLayout(progress_layout)
-        main_layout.addLayout(stats_layout)
-        
-        # ========== PIE DE PÁGINA ==========
-        footer_layout = QHBoxLayout()
-        
-        footer_label = QLabel("ESC o Q para salir  •  Toca las teclas del piano cuando aparezcan las notas")
-        footer_label.setObjectName("info")
-        footer_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        footer_layout.addWidget(footer_label)
-        
-        footer_layout.addStretch()
-        
-        exit_btn = QPushButton("Salir")
+        info_panel.addWidget(self.progress_bar)
+
+        info_panel.addStretch()
+
+        # Botón salir
+        exit_btn = QPushButton("SALIR DEL MODO RITMO")
         exit_btn.setObjectName("exitButton")
         exit_btn.clicked.connect(self._exit_song)
-        footer_layout.addWidget(exit_btn)
-        
-        main_layout.addLayout(footer_layout)
+        info_panel.addWidget(exit_btn)
+
+        content_layout.addLayout(info_panel, 2)
+
+        main_layout.addLayout(content_layout)
+
+        # ========== PIE DE PÁGINA ==========
+        footer_label = QLabel("Presiona ESC o Q para salir | Toca las teclas cuando las notas lleguen al teclado")
+        footer_label.setObjectName("info")
+        footer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(footer_label)
     
     def _start_game(self):
         """Inicia el juego"""
@@ -247,6 +262,16 @@ class SongWindow(QMainWindow):
         if frame_left is None or frame_right is None:
             return
         
+        # Importar configuración estéreo (compartida)
+        from src.vision.stereo_config import StereoConfig
+
+        # Lógica de visualización unificada con los otros modos
+        if getattr(StereoConfig, 'ROTATE_CAMERAS_180', False):
+            frame_left = cv2.flip(frame_left, -1)
+            frame_right = cv2.flip(frame_right, -1)
+        elif getattr(StereoConfig, 'MIRROR_HORIZONTAL', False):
+            frame_left = cv2.flip(frame_left, 1)
+
         # Procesar teclado virtual con el procesador centralizado
         # Ahora usa game_mode=True y pasa rhythm_game para dibujar notas
         if self.keyboard_processor and self.hand_detector_left and self.hand_detector_right:
@@ -310,15 +335,11 @@ class SongWindow(QMainWindow):
             import traceback
             traceback.print_exc()
         
-        # Aplicar flip horizontal para corregir efecto espejo
-        frame_left = cv2.flip(frame_left, 1)
-        frame_right = cv2.flip(frame_right, 1)
-        
-        # Concatenar frames en orden correcto (derecha primero, izquierda después)
-        h_frames = np.concatenate((frame_right, frame_left), axis=1)
+        # Mostrar solo la cámara izquierda (principal) para evitar parpadeos y confusión
+        # No concatenamos frames.
         
         # Convertir a QPixmap y mostrar
-        self._display_frame(h_frames)
+        self._display_frame(frame_left)
     
     def _display_frame(self, frame):
         """Convierte frame OpenCV a QPixmap y lo muestra"""

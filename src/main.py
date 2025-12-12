@@ -990,7 +990,6 @@ def main():
                 r"C:\CodingWindows\IHCProyecto\utils\fluid\fluid\FluidR3_GM.sf2",
                 r"C:\CodingWindows\IHCProyecto\utils\fluid\FluidR3_GM.sf2",
                 r"C:\Users\MI PC\OneDrive\Desktop\fluid\FluidR3_GM.sf2",
-                r"C:\Users\TEC\Desktop\fluid\fluid\FluidR3_GM.sf2",
                 AppConfig.get_soundfont_path()
             ]
             
@@ -1007,7 +1006,7 @@ def main():
             if sfid is None:
                 print("❌ ERROR: No se encontró el archivo SoundFont (.sf2)")
                 print("   Descarga FluidR3_GM.sf2 y colócalo en:")
-                for path in soundfont_paths[:2]:
+                for path in soundfont_paths[:2]:        
                     print(f"   - {path}")
                 cam_left.stop()
                 cam_right.stop()
@@ -1160,18 +1159,20 @@ def main():
                                 point_left = (finger_left[2], finger_left[3])
                                 point_right = (finger_right[2], finger_right[3])
                                 
+                                # 1. Rectificar puntos
+                                pt_l_rect = depth_estimator.rectify_point(point_left, 'left')
+                                pt_r_rect = depth_estimator.rectify_point(point_right, 'right')
+                                
                                 # Triangular con calibración completa
-                                result_3d = depth_estimator.triangulate_point(point_left, point_right)
+                                result_3d = depth_estimator.triangulate_point(pt_l_rect, pt_r_rect)
                                 
                                 if result_3d is not None:
                                     X_raw, Y_raw, Z_raw = result_3d
                                     
-                                    # APLICAR FACTOR DE CORRECCIÓN DE PROFUNDIDAD (0.74)
-                                    # Basado en mediciones empíricas (43cm real / 58cm medido)
-                                    DEPTH_CORRECTION_FACTOR = 0.74
+                                    # NOTA: El factor de corrección ya se aplica dentro de DepthEstimator
                                     X_local = X_raw
                                     Y_local = Y_raw
-                                    Z_local = Z_raw * DEPTH_CORRECTION_FACTOR
+                                    Z_local = Z_raw 
                                     
                                     # APLICAR SUAVIZADO TEMPORAL para reducir jitter
                                     # Obtener ID único del dedo

@@ -338,6 +338,30 @@ class DepthEstimator:
             print(f"Error en triangulación DLT: {e}")
             return None
     
+    def rectify_point(self, point, camera='left'):
+        """
+        Rectifica un punto 2D individual
+        
+        Args:
+            point: (x, y) coordenadas en imagen original
+            camera: 'left' o 'right'
+            
+        Returns:
+            tuple: (x, y) coordenadas en imagen rectificada
+        """
+        if camera == 'left':
+            K, D, R, P = self.K_left, self.D_left, self.R1, self.P1
+        else:
+            K, D, R, P = self.K_right, self.D_right, self.R2, self.P2
+            
+        # Convertir a formato numpy array (N, 1, 2)
+        pt = np.array([[[point[0], point[1]]]], dtype=np.float32)
+        
+        # Undistort y rectificar
+        rect_pt = cv2.undistortPoints(pt, K, D, R=R, P=P)
+        
+        return rect_pt[0, 0]
+
     def triangulate_point(self, point_left, point_right, method='DLT'):
         """
         Triangula un punto 3D desde coordenadas 2D en imágenes RECTIFICADAS

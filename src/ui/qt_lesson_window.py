@@ -267,9 +267,15 @@ class LessonWindow(QMainWindow):
         if frame_left is None or frame_right is None:
             return
         
-        # --- CORRECCIÓN ESPEJO ---
-        # Voltear el frame horizontalmente AHORA, antes de procesar nada.
-        frame_left = cv2.flip(frame_left, 1)
+        # Importar configuración estéreo (compartida)
+        from src.vision.stereo_config import StereoConfig
+
+        # Lógica de visualización unificada
+        if getattr(StereoConfig, 'ROTATE_CAMERAS_180', False):
+            frame_left = cv2.flip(frame_left, -1)
+            frame_right = cv2.flip(frame_right, -1)
+        elif getattr(StereoConfig, 'MIRROR_HORIZONTAL', False):
+            frame_left = cv2.flip(frame_left, 1)
         
         # Procesar teclado virtual (usando el frame ya corregido)
         if self.keyboard_processor and self.hand_detector_left and self.hand_detector_right:

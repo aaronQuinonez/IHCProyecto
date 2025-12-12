@@ -21,6 +21,10 @@ class StereoConfig:
     PIXEL_WIDTH = 640               # Ancho en píxeles
     PIXEL_HEIGHT = 480              # Alto en píxeles
     FRAME_RATE = 30                 # FPS objetivo
+
+    # Orientación física y modo espejo (compartido por TODOS los modos)
+    ROTATE_CAMERAS_180 = True       # Rotar cámaras 180 grados (si están montadas invertidas)
+    MIRROR_HORIZONTAL = False       # Espejo horizontal para la UI (False = sin espejo)
     
     # ==================== CALIBRACIÓN ÓPTICA ====================
     # Logi C920s HD Pro Webcam

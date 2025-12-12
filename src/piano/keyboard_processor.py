@@ -189,18 +189,20 @@ class KeyboardProcessor:
                 point_left = (finger_left[2], finger_left[3])
                 point_right = (finger_right[2], finger_right[3])
                 
+                # 1. Rectificar puntos antes de triangular
+                pt_l_rect = self.depth_estimator.rectify_point(point_left, 'left')
+                pt_r_rect = self.depth_estimator.rectify_point(point_right, 'right')
+                
                 # Triangular con calibración completa
-                result_3d = self.depth_estimator.triangulate_point(point_left, point_right)
+                result_3d = self.depth_estimator.triangulate_point(pt_l_rect, pt_r_rect)
                 
                 if result_3d is not None:
                     X_raw, Y_raw, Z_raw = result_3d
                     
-                    # APLICAR FACTOR DE CORRECCIÓN DE PROFUNDIDAD (0.74)
-                    # Basado en mediciones empíricas (43cm real / 58cm medido)
-                    DEPTH_CORRECTION_FACTOR = 0.74
+                    # NOTA: El factor de corrección ya se aplica dentro de DepthEstimator
                     X_local = X_raw
                     Y_local = Y_raw
-                    Z_local = Z_raw * DEPTH_CORRECTION_FACTOR
+                    Z_local = Z_raw 
                     
                     # APLICAR SUAVIZADO TEMPORAL para reducir jitter
                     finger_id = (finger_left[0], finger_left[1])
