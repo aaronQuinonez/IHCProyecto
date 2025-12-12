@@ -37,6 +37,7 @@ from src.ui.qt_theory_menu import show_theory_menu
 from src.ui.qt_lesson_window import show_lesson_window
 from src.ui.qt_songs_menu import show_songs_menu
 from src.ui.qt_song_window import show_song_window
+from src.ui.qt_free_mode_window import show_free_mode_window
 
 # --- Theory ---
 from src.theory import get_lesson_manager
@@ -989,7 +990,7 @@ def main():
                 r"C:\CodingWindows\IHCProyecto\utils\fluid\fluid\FluidR3_GM.sf2",
                 r"C:\CodingWindows\IHCProyecto\utils\fluid\FluidR3_GM.sf2",
                 r"C:\Users\MI PC\OneDrive\Desktop\fluid\FluidR3_GM.sf2",
-                r"C:\Users\USER\fluid\FluidR3_GM.sf2",
+                r"C:\Users\TEC\Desktop\fluid\fluid\FluidR3_GM.sf2",
                 AppConfig.get_soundfont_path()
             ]
             
@@ -1345,6 +1346,28 @@ def main():
                     rhythm_mode = False
                     print("Canción terminada. Regresando al menú principal...")
                     break  # Salir del loop de OpenCV para volver al menú principal
+
+                if initial_mode == "free" and not theory_mode and not rhythm_mode:
+                    print("Iniciando Ventana de Modo Libre...")
+                    
+                    # Llamamos a la nueva ventana PyQt6
+                    show_free_mode_window(
+                        camera_left=cam_left,
+                        camera_right=cam_right,
+                        synth=fs,
+                        virtual_keyboard=vk_left,
+                        hand_detector_left=left_detector,
+                        hand_detector_right=right_detector,
+                        keyboard_mapper=km,
+                        angler=angler,
+                        depth_estimator=depth_estimator,
+                        octave_base=octave_base,
+                        keyboard_total_keys=KEYBOARD_TOT_KEYS,
+                        camera_separation=camera_separation
+                    )
+                    
+                    print("Regresando al menú principal...")
+                    break  # ROMPEMOS el bucle para volver al menú principal
                 
                 # === MODO CONFIGURACIÓN ===
                 # Config mode removed
