@@ -171,14 +171,14 @@ class FreeModeWindow(QMainWindow):
         from src.vision.stereo_config import StereoConfig
 
         # === Lógica de visualización unificada ===
-        # 1) Si la cámara está físicamente rotada 180°: aplicamos flip(-1)
-        #    (rota 180° y corrige también el espejo horizontal).
-        # 2) Solo si NO está rotada y MIRROR_HORIZONTAL=True aplicamos efecto espejo.
+        # Aplicamos la misma transformación a AMBOS frames para mantener
+        # la coherencia en el cálculo de profundidad.
         if getattr(StereoConfig, 'ROTATE_CAMERAS_180', False):
             frame_left = cv2.flip(frame_left, -1)
             frame_right = cv2.flip(frame_right, -1)
         elif getattr(StereoConfig, 'MIRROR_HORIZONTAL', False):
             frame_left = cv2.flip(frame_left, 1)
+            frame_right = cv2.flip(frame_right, 1)
             
         # frame_right se usa para profundidad, no visualización directa
         
@@ -203,38 +203,55 @@ class FreeModeWindow(QMainWindow):
             if len(hl_tips) > 0 and len(hr_tips) > 0:
                 finger_depths_dict = {}
                 
-                # Cálculo simplificado de profundidad (Triangulación)
-                # NOTA: Usamos una versión simplificada del lógica de KeyboardProcessor 
-                # para mantener este archivo limpio.
-                for fl in hl_tips:
-                    for fr in hr_tips:
-                        if fl[0] == fr[0] and fl[1] == fr[1]: # Mismo dedo
-                            # Usar DepthEstimator si está disponible (Recomendado)
-                            if self.depth_estimator:
-                                # 1. Rectificar puntos
-                                pt_left = (fl[2], fl[3])
-                                pt_right = (fr[2], fr[3])
-                                pt_l_rect = self.depth_estimator.rectify_point(pt_left, 'left')
-                                pt_r_rect = self.depth_estimator.rectify_point(pt_right, 'right')
-                                
-                                # 2. Triangular
-                                point_3d = self.depth_estimator.triangulate_point(pt_l_rect, pt_r_rect)
-                                
-                                if point_3d:
-                                    depth = point_3d[2] # Z
-                                    finger_depths_dict[(fl[0], fl[1])] = depth
+                # Obtener distancia del teclado desde la calibración (Fase 3)
+                # Esta es la referencia para determinar si un dedo "toca" el teclado
+                keyboard_distance = None
+                if self.depth_estimator and hasattr(self.depth_estimator, 'keyboard_distance_cm'):
+                    keyboard_distance = self.depth_estimator.keyboard_distance_cm
+                
+                # Si no hay distancia calibrada, no podemos detectar notas correctamente
+                if keyboard_distance is None:
+                    # Mostrar advertencia una sola vez
+                    if not hasattr(self, '_calibration_warning_shown'):
+                        print("⚠ Fase 3 no completada - la detección de notas no funcionará")
+                        print("  Ejecuta: Recalibrar → Fase 3 para calibrar la distancia del teclado")
+                        self._calibration_warning_shown = True
+                    # Continuar sin procesar notas
+                else:
+                    # Cálculo de profundidad (Triangulación)
+                    # depth_relative > 0: dedo ha pasado el plano del teclado (tocar)
+                    # depth_relative < 0: dedo está antes del plano del teclado (no tocar)
+                    for fl in hl_tips:
+                        for fr in hr_tips:
+                            if fl[0] == fr[0] and fl[1] == fr[1]: # Mismo dedo
+                                # Usar DepthEstimator si está disponible
+                                if self.depth_estimator:
+                                    # 1. Rectificar puntos
+                                    pt_left = (fl[2], fl[3])
+                                    pt_right = (fr[2], fr[3])
+                                    pt_l_rect = self.depth_estimator.rectify_point(pt_left, 'left')
+                                    pt_r_rect = self.depth_estimator.rectify_point(pt_right, 'right')
+                                    
+                                    # 2. Triangular
+                                    point_3d = self.depth_estimator.triangulate_point(pt_l_rect, pt_r_rect)
+                                    
+                                    if point_3d:
+                                        depth_absolute = point_3d[2]  # Z = distancia desde cámaras (cm)
+                                        # Profundidad relativa al teclado calibrado
+                                        depth_relative = keyboard_distance - depth_absolute
+                                        finger_depths_dict[(fl[0], fl[1])] = depth_relative
 
-                            # Fallback a lógica antigua si no hay DepthEstimator
-                            elif self.angler:
-                                xl, yl = self.angler.angles_from_center(x=fl[2], y=fl[3], top_left=True, degrees=True)
-                                xr, yr = self.angler.angles_from_center(x=fr[2], y=fr[3], top_left=True, degrees=True)
-                                _, _, Z, D = self.angler.location(
-                                    self.camera_separation, (xl, yl), (xr, yr), center=True, degrees=True
-                                )
-                                # Corrección básica
-                                delta_y = 0.0065 * Z * Z + 0.039 * -1 * Z
-                                depth = D - delta_y
-                                finger_depths_dict[(fl[0], fl[1])] = depth
+                                # Fallback a lógica antigua si no hay DepthEstimator
+                                elif self.angler and keyboard_distance:
+                                    xl, yl = self.angler.angles_from_center(x=fl[2], y=fl[3], top_left=True, degrees=True)
+                                    xr, yr = self.angler.angles_from_center(x=fr[2], y=fr[3], top_left=True, degrees=True)
+                                    _, _, Z, D = self.angler.location(
+                                        self.camera_separation, (xl, yl), (xr, yr), center=True, degrees=True
+                                    )
+                                    delta_y = 0.0065 * Z * Z + 0.039 * -1 * Z
+                                    depth_absolute = D - delta_y
+                                    depth_relative = keyboard_distance - depth_absolute
+                                    finger_depths_dict[(fl[0], fl[1])] = depth_relative
                 
                 # Obtener teclas presionadas
                 on_map, off_map = self.keyboard_mapper.get_kayboard_map(

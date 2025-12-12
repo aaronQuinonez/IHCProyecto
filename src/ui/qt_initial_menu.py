@@ -134,14 +134,10 @@ def show_initial_menu() -> int | None:
 
     if app is None:
         app = QApplication(sys.argv)
-        owns_app = True
 
     dlg = InitialMenuDialog()
     dlg.exec()
 
     choice = dlg.choice  # puede ser 1,2,3 o None
-
-    if owns_app:
-        app.quit()
 
     return choice

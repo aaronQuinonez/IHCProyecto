@@ -193,22 +193,31 @@ class CalibrationSummaryDialog(QDialog):
         
         p3_layout = QVBoxLayout()
         
-        # Correction Factor
-        row_factor = QHBoxLayout()
-        row_factor.addWidget(QLabel("Factor de Corrección:"))
+        # Distancia del teclado calibrada
+        row_distance = QHBoxLayout()
+        row_distance.addWidget(QLabel("Distancia del Teclado:"))
         
-        # Intentar obtener factor de corrección (puede estar en 'correction_factor' o 'depth_correction_factor')
-        factor_val = self.summary.get('correction_factor', 'N/A')
-        
-        if factor_val == 'N/A':
-            factor_val = self.summary.get('depth_correction_factor', 'N/A')
+        keyboard_dist = self.summary.get('keyboard_distance_cm', 'N/A')
+        keyboard_samples = self.summary.get('keyboard_samples', 'N/A')
              
-        val_factor = f"{factor_val:.4f}" if isinstance(factor_val, float) else str(factor_val)
-        lbl_factor = QLabel(val_factor)
-        lbl_factor.setStyleSheet("color: #00C8FF; font-weight: bold; font-size: 16px;")
-        row_factor.addWidget(lbl_factor)
-        row_factor.addStretch()
-        p3_layout.addLayout(row_factor)
+        if isinstance(keyboard_dist, (int, float)):
+            val_dist = f"{keyboard_dist:.2f} cm"
+            lbl_dist = QLabel(val_dist)
+            lbl_dist.setStyleSheet("color: #00ff00; font-weight: bold; font-size: 16px;")
+        else:
+            lbl_dist = QLabel("N/A")
+            lbl_dist.setStyleSheet("color: #ffaa00; font-weight: bold; font-size: 16px;")
+        
+        row_distance.addWidget(lbl_dist)
+        
+        # Muestras usadas
+        if isinstance(keyboard_samples, int) and keyboard_samples > 0:
+            lbl_samples = QLabel(f"({keyboard_samples} muestras)")
+            lbl_samples.setStyleSheet("color: #aaaaaa; font-size: 14px;")
+            row_distance.addWidget(lbl_samples)
+        
+        row_distance.addStretch()
+        p3_layout.addLayout(row_distance)
         
         main_layout.addLayout(p3_layout)
         
@@ -270,17 +279,10 @@ def show_calibration_summary(summary_data):
     Muestra el diálogo de resumen y retorna la acción seleccionada
     """
     app = QApplication.instance()
-    owns_app = False
     if not app:
         app = QApplication(sys.argv)
-        owns_app = True
         
     dialog = CalibrationSummaryDialog(summary_data)
     dialog.exec()
     
-    result = dialog.result_action
-    
-    if owns_app:
-        app.quit()
-        
-    return result
+    return dialog.result_action

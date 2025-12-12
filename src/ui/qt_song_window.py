@@ -266,11 +266,13 @@ class SongWindow(QMainWindow):
         from src.vision.stereo_config import StereoConfig
 
         # Lógica de visualización unificada con los otros modos
+        # Aplicamos la misma transformación a AMBOS frames
         if getattr(StereoConfig, 'ROTATE_CAMERAS_180', False):
             frame_left = cv2.flip(frame_left, -1)
             frame_right = cv2.flip(frame_right, -1)
         elif getattr(StereoConfig, 'MIRROR_HORIZONTAL', False):
             frame_left = cv2.flip(frame_left, 1)
+            frame_right = cv2.flip(frame_right, 1)
 
         # Procesar teclado virtual con el procesador centralizado
         # Ahora usa game_mode=True y pasa rhythm_game para dibujar notas
@@ -420,8 +422,5 @@ def show_song_window(song, camera_left, camera_right, synth,
             app.processEvents()
     
     result = window.continue_song
-    
-    if owns_app:
-        app.quit()
     
     return result

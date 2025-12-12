@@ -45,9 +45,13 @@ class DepthEstimator:
         self.R_world_right = None  # Rotación cámara der respecto al mundo
         self.T_world_right = None  # Traslación cámara der respecto al mundo
         
-        # Factor de corrección de profundidad (calibrado empíricamente)
-        # Basado en mediciones reales vs estimadas
-        self.DEPTH_CORRECTION_FACTOR = 0.74
+        # Factor de corrección de profundidad (calculado en Fase 3)
+        # 1.0 = sin corrección (valores RAW de triangulación)
+        self.DEPTH_CORRECTION_FACTOR = 1.0
+        
+        # Distancia del plano del teclado (calculada en Fase 3)
+        # Esta es la referencia para determinar si un dedo "toca" el teclado
+        self.keyboard_distance_cm = None
         
         # Sistema de suavizado temporal (para reducir jitter)
         self.smoothing_enabled = True
@@ -146,16 +150,25 @@ class DepthEstimator:
         self.P2 = np.array(rect['P2'], dtype=np.float32)
         self.Q = np.array(rect['Q'], dtype=np.float32)
         
-        # NUEVO: Cargar factor de corrección de profundidad si existe (Fase 3)
+        # NUEVO: Cargar datos de Fase 3 si existen
         if 'depth_correction' in data:
             depth_corr = data['depth_correction']
-            self.DEPTH_CORRECTION_FACTOR = depth_corr.get('factor', 0.74)
-            print(f"  ✓ Factor de corrección de profundidad cargado: {self.DEPTH_CORRECTION_FACTOR:.4f}")
+            
+            # Factor de corrección (opcional, default 1.0)
+            self.DEPTH_CORRECTION_FACTOR = depth_corr.get('factor', 1.0)
+            
+            # Distancia del teclado (IMPORTANTE - calculada en Fase 3)
+            if 'keyboard_distance_cm' in depth_corr:
+                self.keyboard_distance_cm = depth_corr['keyboard_distance_cm']
+                print(f"  ✓ Distancia del teclado cargada: {self.keyboard_distance_cm:.2f} cm")
+            else:
+                print("  ⚠ Distancia del teclado no encontrada en calibración")
+                print("    Ejecuta Fase 3 para calibrar la distancia del teclado")
         else:
-            # Usar valor por defecto si no hay Fase 3
-            self.DEPTH_CORRECTION_FACTOR = 0.74
-            print(f"  ⚠ Factor de corrección no encontrado, usando por defecto: {self.DEPTH_CORRECTION_FACTOR:.4f}")
-            print("    Ejecuta Fase 3 (Calibración de Profundidad) para mejorar precisión")
+            # Sin Fase 3 - usar valores por defecto
+            self.DEPTH_CORRECTION_FACTOR = 1.0
+            print("  ⚠ Fase 3 no completada - la detección de notas puede no funcionar")
+            print("    Ejecuta Fase 3 (Calibración de Distancia) para habilitar la detección")
         
         print(f"✓ Calibración cargada desde: {self.calibration_file}")
         print(f"  Baseline: {self.baseline_cm:.2f} cm")

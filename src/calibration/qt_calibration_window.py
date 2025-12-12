@@ -246,12 +246,17 @@ class CalibrationWindow(QMainWindow):
         # Importar configuración estéreo
         from src.vision.stereo_config import StereoConfig
 
-        # Rotación 180 grados si es necesario (cámaras invertidas)
+        # Aplicar transformación según configuración (igual que en UIs)
         if hasattr(StereoConfig, 'ROTATE_CAMERAS_180') and StereoConfig.ROTATE_CAMERAS_180:
             if frame_left is not None:
                 frame_left = cv2.flip(frame_left, -1)
             if frame_right is not None:
                 frame_right = cv2.flip(frame_right, -1)
+        elif hasattr(StereoConfig, 'MIRROR_HORIZONTAL') and StereoConfig.MIRROR_HORIZONTAL:
+            if frame_left is not None:
+                frame_left = cv2.flip(frame_left, 1)
+            if frame_right is not None:
+                frame_right = cv2.flip(frame_right, 1)
 
         if frame_left is not None:
             self._display_frame(frame_left, self.camera_left_label)

@@ -23,8 +23,16 @@ class StereoConfig:
     FRAME_RATE = 30                 # FPS objetivo
 
     # Orientación física y modo espejo (compartido por TODOS los modos)
-    ROTATE_CAMERAS_180 = True       # Rotar cámaras 180 grados (si están montadas invertidas)
-    MIRROR_HORIZONTAL = False       # Espejo horizontal para la UI (False = sin espejo)
+    # IMPORTANTE: Estos flags afectan TODO el sistema (UI, calibración, teclado).
+    # Después de cambiarlos, DEBES recalibrar (Fase 1, 2 y 3).
+    
+    # ROTATE_CAMERAS_180: Rota la imagen 180° para cámaras que están frente a ti.
+    # Las cámaras ven el piano "al revés" (Do a la derecha), esto lo corrige.
+    ROTATE_CAMERAS_180 = True       # True = cámaras frente a ti, corrige orientación
+    
+    # MIRROR_HORIZONTAL: Efecto espejo (como selfie).
+    # Generalmente False cuando usas ROTATE_CAMERAS_180.
+    MIRROR_HORIZONTAL = False       # False = sin efecto espejo
     
     # ==================== CALIBRACIÓN ÓPTICA ====================
     # Logi C920s HD Pro Webcam
@@ -44,6 +52,7 @@ class StereoConfig:
     # ==================== DETECCIÓN DE PROFUNDIDAD ====================
     DEPTH_THRESHOLD = 2.5           # Umbral de profundidad para presión (cm)
                                      # Rango recomendado: 2.0-5.0 cm
+    DEPTH_CORRECTION_FACTOR = 1.0   # Factor de corrección de profundidad (calculado en Fase 3)
     
     # Sistema de detección de movimiento (velocity-based triggering)
     VELOCITY_THRESHOLD = 1.5        # Velocidad mínima hacia abajo (cm/frame) para activar tecla
@@ -178,15 +187,42 @@ class StereoConfig:
                 calib_data = json.load(f)
             
             # Actualizar parámetros desde la calibración
-            if 'camera_separation_cm' in calib_data:
+            # 1. Separación de cámaras (baseline)
+            if 'stereo' in calib_data and 'baseline_cm' in calib_data['stereo']:
+                StereoConfig.CAMERA_SEPARATION = calib_data['stereo']['baseline_cm']
+            elif 'camera_separation_cm' in calib_data:
                 StereoConfig.CAMERA_SEPARATION = calib_data['camera_separation_cm']
             
-            if 'keyboard_distance_cm' in calib_data:
+            # 2. Distancia del teclado (de Fase 3 - depth_correction)
+            # Prioridad: depth_correction.keyboard_distance_cm > depth_calibration > raíz
+            if 'depth_correction' in calib_data and 'keyboard_distance_cm' in calib_data['depth_correction']:
+                StereoConfig.VKB_CENTER_DISTANCE = calib_data['depth_correction']['keyboard_distance_cm']
+            elif 'depth_calibration' in calib_data and 'keyboard_distance_cm' in calib_data['depth_calibration']:
+                StereoConfig.VKB_CENTER_DISTANCE = calib_data['depth_calibration']['keyboard_distance_cm']
+            elif 'keyboard_distance_cm' in calib_data:
                 StereoConfig.VKB_CENTER_DISTANCE = calib_data['keyboard_distance_cm']
+            
+            # 3. Umbral de profundidad (de Fase 3 si existe)
+            if 'depth_calibration' in calib_data and 'depth_threshold_cm' in calib_data['depth_calibration']:
+                StereoConfig.DEPTH_THRESHOLD = calib_data['depth_calibration']['depth_threshold_cm']
+            
+            # 4. Factor de corrección de profundidad (puede estar en depth_correction o depth_calibration)
+            if 'depth_correction' in calib_data and 'factor' in calib_data['depth_correction']:
+                StereoConfig.DEPTH_CORRECTION_FACTOR = calib_data['depth_correction']['factor']
+            elif 'depth_calibration' in calib_data and 'correction_factor' in calib_data['depth_calibration']:
+                StereoConfig.DEPTH_CORRECTION_FACTOR = calib_data['depth_calibration']['correction_factor']
+            
+            # 5. IDs de cámaras
+            if 'camera_ids' in calib_data:
+                if 'left' in calib_data['camera_ids']:
+                    StereoConfig.LEFT_CAMERA_SOURCE = calib_data['camera_ids']['left']
+                if 'right' in calib_data['camera_ids']:
+                    StereoConfig.RIGHT_CAMERA_SOURCE = calib_data['camera_ids']['right']
             
             print(f"✓ Calibración cargada desde: {calibration_path}")
             print(f"  Separación cámaras: {StereoConfig.CAMERA_SEPARATION:.2f} cm")
             print(f"  Distancia teclado: {StereoConfig.VKB_CENTER_DISTANCE:.2f} cm")
+            print(f"  Umbral profundidad: {StereoConfig.DEPTH_THRESHOLD:.2f} cm")
             
             return True
         

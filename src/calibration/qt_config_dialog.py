@@ -19,6 +19,9 @@ class CalibrationConfigDialog(QDialog):
         self.setWindowTitle("Configuración de Calibración")
         self.setModal(True)
         
+        # Asegurar que el diálogo aparezca al frente
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+        
         self.rows = default_rows
         self.cols = default_cols
         self.size_mm = default_size_mm
@@ -127,7 +130,10 @@ class CalibrationConfigDialog(QDialog):
         self.size_spin = QDoubleSpinBox()
         self.size_spin.setRange(5.0, 100.0)
         self.size_spin.setSingleStep(0.5)
+        self.size_spin.setDecimals(2)  # Asegurar 2 decimales
         self.size_spin.setValue(self.size_mm)
+        # Conectar señal para actualizar valor interno inmediatamente
+        self.size_spin.valueChanged.connect(self._on_size_changed)
         size_h_layout.addWidget(size_label)
         size_h_layout.addWidget(self.size_spin)
         size_layout.addLayout(size_h_layout)
@@ -185,21 +191,46 @@ class CalibrationConfigDialog(QDialog):
         cancel_btn = QPushButton("Cancelar")
         cancel_btn.setObjectName("cancelButton")
         cancel_btn.clicked.connect(self.reject)
+        cancel_btn.setAutoDefault(False)  # Evitar que se active con Enter
         
         accept_btn = QPushButton("Iniciar Calibración")
         accept_btn.clicked.connect(self.accept_values)
+        accept_btn.setDefault(True)  # Este es el botón principal
+        accept_btn.setAutoDefault(True)
         
         btn_layout.addWidget(cancel_btn)
         btn_layout.addWidget(accept_btn)
         
         layout.addLayout(btn_layout)
         
+        # Conectar spinboxes para que Enter llame a accept_values
+        self.row_spin.editingFinished.connect(lambda: None)  # Solo actualizar valor
+        self.col_spin.editingFinished.connect(lambda: None)
+        self.size_spin.editingFinished.connect(lambda: None)
+        
+    def _on_size_changed(self, value):
+        """Actualiza el valor interno cuando cambia el spinbox"""
+        print(f"[DEBUG] Tamaño de cuadro cambiado a: {value}")
+        self.size_mm = value
+    
     def accept_values(self):
+        """Guarda los valores y acepta el diálogo"""
+        print(f"[DEBUG] accept_values() llamado")
+        
+        # Forzar que los spinboxes actualicen su valor interno
+        self.row_spin.interpretText()
+        self.col_spin.interpretText()
+        self.size_spin.interpretText()
+        
         self.rows = self.row_spin.value()
         self.cols = self.col_spin.value()
         self.size_mm = self.size_spin.value()
         self.selected_phase = self.phase_combo.currentData()
+        
+        print(f"[DEBUG] Valores obtenidos: rows={self.rows}, cols={self.cols}, size_mm={self.size_mm}, phase={self.selected_phase}")
+        
         self.accept()
         
     def get_values(self):
+        print(f"[DEBUG] get_values() llamado: rows={self.rows}, cols={self.cols}, size_mm={self.size_mm}, phase={self.selected_phase}")
         return self.rows, self.cols, self.size_mm, self.selected_phase

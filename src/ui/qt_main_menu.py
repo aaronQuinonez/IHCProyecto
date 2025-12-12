@@ -292,13 +292,10 @@ class MainMenuDialog(QDialog):
 
 def show_main_menu() -> Optional[str]:
     app = QApplication.instance()
-    owns_app = False
     if app is None:
         app = QApplication(sys.argv)
-        owns_app = True
     dlg = MainMenuDialog()
     dlg.exec()
     choice = dlg.choice
-    if owns_app:
-        app.quit()
+    # NO llamar app.quit() aquí - la app se reutiliza en el loop principal
     return choice

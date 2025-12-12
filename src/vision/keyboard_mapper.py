@@ -136,7 +136,8 @@ class KeyboardMapModular:
             if virtual_keyboard.intersect((x_pos, y_pos)):
                 key = virtual_keyboard.find_key(x_pos, y_pos)
                 
-                if 0 <= key < keyboard_n_key:
+                # Verificar que key no sea None y esté en rango válido
+                if key is not None and 0 <= key < keyboard_n_key:
                     # Obtener profundidad
                     if finger_id in finger_depths:
                         depth = finger_depths[finger_id]
@@ -153,15 +154,16 @@ class KeyboardMapModular:
                             velocity = history[-2] - history[-1]
                         
                         # Verificar condición básica de activación
+                        # depth es profundidad RELATIVA: positivo = dedo más cerca que teclado
                         should_activate = False
                         
                         if self.velocity_enabled and len(self.finger_depth_history[finger_id]) >= 2:
-                            # Modo velocidad
-                            if depth <= self.depth_threshold and velocity >= self.velocity_threshold:
+                            # Modo velocidad: requiere profundidad Y velocidad descendente
+                            if depth >= self.depth_threshold and velocity >= self.velocity_threshold:
                                 should_activate = True
                         else:
-                            # Modo clásico
-                            if depth <= self.depth_threshold:
+                            # Modo clásico: solo requiere profundidad suficiente
+                            if depth >= self.depth_threshold:
                                 should_activate = True
                         
                         if should_activate:

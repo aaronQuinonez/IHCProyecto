@@ -60,16 +60,19 @@ class HisteresisAlgorithm(BaseAlgorithm):
             
             if is_pressed:
                 # Tecla ya presionada: usar umbral de liberación
-                if depth <= self.release_threshold:
+                # depth_relative: positivo = dedo más cerca que teclado
+                # Mantener si profundidad >= umbral de liberación (dedo sigue cerca)
+                if depth >= self.release_threshold:
                     # Mantener presionada
                     filtered.append(detection)
                 else:
-                    # Liberar
+                    # Liberar (dedo se alejó)
                     self.key_pressed_state[key] = False
                     self.stats['release_applied'] += 1
             else:
                 # Tecla no presionada: usar umbral de presión
-                if depth <= self.press_threshold:
+                # Activar si profundidad >= umbral de presión (dedo suficientemente cerca)
+                if depth >= self.press_threshold:
                     # Activar
                     self.key_pressed_state[key] = True
                     filtered.append(detection)

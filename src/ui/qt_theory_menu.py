@@ -282,17 +282,12 @@ def show_theory_menu(lessons) -> Optional[str]:
         lesson_id seleccionado o None si se cancela
     """
     app = QApplication.instance()
-    owns_app = False
     if app is None:
         app = QApplication(sys.argv)
-        owns_app = True
     
     dlg = TheoryMenuDialog(lessons)
     result = dlg.exec()
     
     lesson_id = dlg.selected_lesson_id if result == QDialog.DialogCode.Accepted else None
-    
-    if owns_app:
-        app.quit()
     
     return lesson_id

@@ -222,8 +222,8 @@ class CalibrationConfig:
                 summary['pares_stereo'] = data['stereo'].get('num_pairs', 'N/A')
             
             if summary['tiene_depth_correction']:
-                summary['depth_correction_factor'] = data['depth_correction'].get('factor', 'N/A')
-                summary['depth_correction_samples'] = data['depth_correction'].get('num_samples', 'N/A')
+                summary['keyboard_distance_cm'] = data['depth_correction'].get('keyboard_distance_cm', 'N/A')
+                summary['keyboard_samples'] = data['depth_correction'].get('keyboard_samples', 'N/A')
             
             return summary
             

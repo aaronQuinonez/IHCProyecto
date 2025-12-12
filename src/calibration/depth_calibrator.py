@@ -28,7 +28,10 @@ class DepthCalibrator:
     Mide a distancias conocidas y calcula el factor óptimo
     """
     
-    def __init__(self, depth_estimator, width=1280, height=720):
+    # Tamaño del buffer para filtro de suavizado
+    SMOOTHING_BUFFER_SIZE = 15
+    
+    def __init__(self, depth_estimator, width=None, height=None):
         """
         Args:
             depth_estimator: Instancia de DepthEstimator ya calibrado (Fase 1+2)
@@ -36,8 +39,17 @@ class DepthCalibrator:
             height: Alto de la imagen
         """
         self.depth_estimator = depth_estimator
-        self.width = width
-        self.height = height
+
+        # Si no se especifica, usar la resolución real de calibración
+        if width is None or height is None:
+            if getattr(depth_estimator, 'image_size', None) is not None:
+                self.width, self.height = depth_estimator.image_size
+            else:
+                self.width = width or 1280
+                self.height = height or 720
+        else:
+            self.width = width
+            self.height = height
         
         # Resultados de mediciones
         self.measurements = []  # [(distancia_real, distancia_medida), ...]
@@ -45,18 +57,30 @@ class DepthCalibrator:
         # Factor calculado
         self.correction_factor = 1.0
         
+        # Distancia del plano del teclado (calculada automáticamente)
+        self.keyboard_distance = None
+        self.keyboard_distance_samples = []  # Para promediar múltiples muestras
+        
+        # Buffer para filtro de suavizado (media móvil)
+        self.depth_buffer = []
+        self.smoothed_depth = None
+        
     def calculate_depth(self, landmarks_left, landmarks_right):
         """
-        Calcula la profundidad del dedo índice usando landmarks
+        Calcula la profundidad del dedo índice usando landmarks.
+        Aplica filtro de suavizado para estabilizar lecturas.
         
         Args:
             landmarks_left: Landmarks de mano izquierda (MediaPipe)
             landmarks_right: Landmarks de mano derecha (MediaPipe)
             
         Returns:
-            float: Profundidad en cm (sin corrección) o None
+            float: Profundidad suavizada en cm o None
         """
         if not landmarks_left or not landmarks_right:
+            # Limpiar buffer si no hay detección
+            self.depth_buffer.clear()
+            self.smoothed_depth = None
             return None
             
         # Obtener índice de ambas cámaras (landmark 8)
@@ -86,7 +110,23 @@ class DepthCalibrator:
         self.depth_estimator.DEPTH_CORRECTION_FACTOR = original_factor
         
         if point_3d is not None:
-            return point_3d[2]  # Profundidad Z
+            raw_depth = point_3d[2]  # Profundidad Z
+            
+            # Agregar al buffer de suavizado
+            self.depth_buffer.append(raw_depth)
+            
+            # Mantener tamaño máximo del buffer
+            if len(self.depth_buffer) > self.SMOOTHING_BUFFER_SIZE:
+                self.depth_buffer.pop(0)
+            
+            # Calcular media móvil (ignorando outliers con mediana)
+            if len(self.depth_buffer) >= 3:
+                # Usar mediana para mayor estabilidad (menos sensible a outliers)
+                self.smoothed_depth = float(np.median(self.depth_buffer))
+            else:
+                self.smoothed_depth = raw_depth
+            
+            return self.smoothed_depth
             
         return None
 
@@ -138,7 +178,7 @@ class DepthCalibrator:
         return factor
     
     def _save_correction_factor(self):
-        """Guarda el factor de corrección en el archivo de calibración"""
+        """Guarda el factor de corrección y distancia del teclado en el archivo de calibración"""
         try:
             calib_file = CalibrationConfig.CALIBRATION_FILE
             
@@ -149,6 +189,7 @@ class DepthCalibrator:
             # Agregar sección de profundidad (Fase 3)
             calib_data['depth_correction'] = {
                 'factor': self.correction_factor,
+                'keyboard_distance_cm': self.keyboard_distance,
                 'measurements': [
                     {'real_cm': real, 'measured_cm': measured}
                     for real, measured in self.measurements
@@ -161,6 +202,64 @@ class DepthCalibrator:
                 json.dump(calib_data, f, indent=4)
             
             print(f"✓ Factor de corrección guardado en: {calib_file}")
+            print(f"✓ Distancia del teclado: {self.keyboard_distance:.2f} cm")
             
         except Exception as e:
             print(f"⚠ Error al guardar factor de corrección: {e}")
+    
+    def add_keyboard_distance_sample(self, depth):
+        """
+        Agrega una muestra de distancia del teclado
+        
+        Args:
+            depth: Profundidad medida cuando el dedo toca el plano del teclado
+        """
+        if depth is not None and depth > 0:
+            self.keyboard_distance_samples.append(depth)
+            print(f"  Muestra de teclado #{len(self.keyboard_distance_samples)}: {depth:.2f} cm")
+    
+    def calculate_keyboard_distance(self):
+        """
+        Calcula la distancia del teclado promediando las muestras
+        
+        Returns:
+            float: Distancia promedio del teclado en cm, o None si no hay muestras
+        """
+        if not self.keyboard_distance_samples:
+            return None
+        
+        # Usar mediana para ser robusto a outliers
+        self.keyboard_distance = float(np.median(self.keyboard_distance_samples))
+        print(f"✓ Distancia del teclado calculada: {self.keyboard_distance:.2f} cm")
+        return self.keyboard_distance
+    
+    def save_keyboard_distance_only(self):
+        """Guarda solo la distancia del teclado (sin factor de corrección)"""
+        if self.keyboard_distance is None:
+            print("⚠ No hay distancia de teclado calculada")
+            return False
+            
+        try:
+            calib_file = CalibrationConfig.CALIBRATION_FILE
+            
+            # Leer calibración existente
+            with open(calib_file, 'r') as f:
+                calib_data = json.load(f)
+            
+            # Agregar o actualizar sección de profundidad
+            if 'depth_correction' not in calib_data:
+                calib_data['depth_correction'] = {}
+            
+            calib_data['depth_correction']['keyboard_distance_cm'] = self.keyboard_distance
+            calib_data['depth_correction']['keyboard_samples'] = len(self.keyboard_distance_samples)
+            
+            # Guardar
+            with open(calib_file, 'w') as f:
+                json.dump(calib_data, f, indent=4)
+            
+            print(f"✓ Distancia del teclado guardada: {self.keyboard_distance:.2f} cm")
+            return True
+            
+        except Exception as e:
+            print(f"⚠ Error al guardar distancia del teclado: {e}")
+            return False

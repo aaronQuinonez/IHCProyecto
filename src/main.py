@@ -663,6 +663,13 @@ def run_calibration_process(ui_helper, pixel_width, pixel_height, config, force_
         return False
 
 def main():
+    # Crear QApplication una sola vez para todo el programa
+    from PyQt6.QtWidgets import QApplication
+    import sys
+    qt_app = QApplication.instance()
+    if qt_app is None:
+        qt_app = QApplication(sys.argv)
+    
     while True:  # <--- 1. BUCLE GLOBAL AGREGADO
         # Inicializar variables para limpieza segura
         fs = None
@@ -1093,9 +1100,18 @@ def main():
                 finished_left, frame_left = cam_left.next(black=True, wait=wait_time)
                 finished_right, frame_right = cam_right.next(black=True, wait=wait_time)
 
-                # Aplicar flip una sola vez al principio (Selfie point of view)
-                frame_left = cv2.flip(frame_left, -1)
-                frame_right = cv2.flip(frame_right, -1)
+                # Aplicar rotación/espejo SEGÚN StereoConfig
+                # Usamos la clase importada al inicio del archivo.
+                # Aplicamos la misma transformación a AMBOS frames.
+
+                if getattr(StereoConfig, 'ROTATE_CAMERAS_180', False):
+                    # Cámaras físicamente boca abajo: corregir con flip(-1)
+                    frame_left = cv2.flip(frame_left, -1)
+                    frame_right = cv2.flip(frame_right, -1)
+                elif getattr(StereoConfig, 'MIRROR_HORIZONTAL', False):
+                    # Espejo horizontal para ambos frames
+                    frame_left = cv2.flip(frame_left, 1)
+                    frame_right = cv2.flip(frame_right, 1)
 
                 hands_left_image = fingers_left_image = []
                 hands_right_image = fingers_right_image = []

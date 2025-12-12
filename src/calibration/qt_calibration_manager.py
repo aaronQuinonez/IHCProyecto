@@ -102,10 +102,28 @@ class QtCalibrationManager(QObject):
         Args:
             start_phase: Ignorado, se usa el diálogo para determinar la fase
         """
+        print("[DEBUG] run_calibration() iniciado")
+        
         # Verificar qué fases están completas para habilitar opciones
         file_exists = CalibrationConfig.CALIBRATION_FILE.exists()
-        has_phase1 = file_exists
-        has_phase2 = file_exists
+        has_phase1 = False
+        has_phase2 = False
+        if file_exists:
+            try:
+                with open(CalibrationConfig.CALIBRATION_FILE, 'r') as f:
+                    prev_data = json.load(f)
+                # Verifica que existan datos de Fase 1
+                has_left = 'left_camera' in prev_data and 'camera_matrix' in prev_data['left_camera']
+                has_right = 'right_camera' in prev_data and 'camera_matrix' in prev_data['right_camera']
+                has_phase1 = has_left and has_right
+                # Verifica que existan datos de Fase 2
+                has_phase2 = 'stereo_config' in prev_data and prev_data['stereo_config'] is not None
+            except Exception as e:
+                print(f"[DEBUG] Error leyendo calibración previa: {e}")
+        print(f"[DEBUG] Archivo existe: {file_exists}, has_phase1: {has_phase1}, has_phase2: {has_phase2}")
+        
+        # Procesar eventos pendientes antes de mostrar diálogo
+        QApplication.processEvents()
         
         # ========== CONFIGURACIÓN DE TABLERO ==========
         # SIEMPRE pedir configuración al usuario para permitir recalibración
@@ -117,35 +135,128 @@ class QtCalibrationManager(QObject):
             enable_phase3=has_phase2
         )
         
-        if dialog.exec():
-            self.board_rows, self.board_cols, self.square_size_mm, selected_phase = dialog.get_values()
-            print(f"✓ Configuración: {self.board_cols}x{self.board_rows}, {self.square_size_mm}mm - Iniciando en Fase {selected_phase}")
+        print("[DEBUG] Diálogo de configuración creado, mostrando...")
+        
+        # Asegurar que el diálogo tenga foco y esté visible
+        dialog.raise_()
+        dialog.activateWindow()
+        dialog.setFocus()
+        
+        # Procesar eventos para que el diálogo se muestre
+        QApplication.processEvents()
+        
+        result = dialog.exec()
+        print(f"[DEBUG] Resultado del diálogo de configuración: {result}")
+        
+        print(f"[DEBUG] dialog.exec() retornó: {result} (tipo: {type(result)})")
+        
+        if result:
+            new_rows, new_cols, new_size_mm, selected_phase = dialog.get_values()
+            print(f"[DEBUG] Valores del diálogo:")
+            print(f"  - new_rows: {new_rows} (tipo: {type(new_rows)})")
+            print(f"  - new_cols: {new_cols} (tipo: {type(new_cols)})")
+            print(f"  - new_size_mm: {new_size_mm} (tipo: {type(new_size_mm)})")
+            print(f"  - selected_phase: {selected_phase} (tipo: {type(selected_phase)})")
+            print(f"✓ Configuración: {new_cols}x{new_rows}, {new_size_mm}mm - Iniciando en Fase {selected_phase}")
+
+            # Cargar configuración previa si existe
+            prev_config = None
+            if CalibrationConfig.CALIBRATION_FILE.exists():
+                try:
+                    with open(CalibrationConfig.CALIBRATION_FILE, 'r') as f:
+                        prev_data = json.load(f)
+                        prev_config = prev_data.get('board_config', {})
+                except Exception as e:
+                    print(f"[DEBUG] No se pudo leer calibración previa: {e}")
+
+            # Si el usuario cambió filas, columnas o tamaño de casilla, forzar recalibración completa
+            if prev_config:
+                prev_rows = prev_config.get('rows')
+                prev_cols = prev_config.get('cols')
+                prev_size = prev_config.get('square_size_mm')
+                
+                # Verificar si algún valor previo es None o si hay diferencias
+                config_changed = False
+                if prev_rows is None or prev_cols is None or prev_size is None:
+                    # Si falta algún valor, considerar que cambió
+                    config_changed = True
+                else:
+                    # Comparar valores
+                    try:
+                        config_changed = (prev_rows != new_rows) or (prev_cols != new_cols) or (abs(float(prev_size) - float(new_size_mm)) > 1e-3)
+                    except (TypeError, ValueError):
+                        # Si hay error en la conversión, considerar que cambió
+                        config_changed = True
+                
+                if config_changed:
+                    print("[DEBUG] El usuario cambió el tamaño del tablero. Borrando calibración previa...")
+                    try:
+                        CalibrationConfig.CALIBRATION_FILE.unlink()
+                        print("[DEBUG] Archivo de calibración eliminado.")
+                    except Exception as e:
+                        print(f"[DEBUG] No se pudo borrar calibración previa: {e}")
+                    # Resetear flags
+                    has_phase1 = False
+                    has_phase2 = False
+
+            self.board_rows = new_rows
+            self.board_cols = new_cols
+            self.square_size_mm = new_size_mm
         else:
-            print("Cancelado por usuario")
+            print("Cancelado por usuario en diálogo de configuración")
             self.finished.emit(False)
             return
-        
+
         # Mostrar ventana
         self.window.show()
-        
+
+        # Verificar que selected_phase tiene un valor válido
+        if selected_phase is None:
+            print("[DEBUG] WARNING: selected_phase es None, usando fase 1 por defecto")
+            selected_phase = 1
+
         # Iniciar según la fase seleccionada en el diálogo
+        print(f"[DEBUG] Iniciando fase: {selected_phase}")
         if selected_phase == 3:
             print("\n✓ Iniciando directamente en Fase 3...")
-            if self._load_phase1_calibration() and self._load_phase2_calibration():
-                self._start_phase3()
+            print("  Cargando Fase 1...")
+            phase1_ok = self._load_phase1_calibration()
+            print(f"  Fase 1 cargada: {phase1_ok}")
+            if phase1_ok:
+                print("  Cargando Fase 2...")
+                phase2_ok = self._load_phase2_calibration()
+                print(f"  Fase 2 cargada: {phase2_ok}")
+                if phase2_ok:
+                    print("  Iniciando Fase 3...")
+                    self._start_phase3()
+                else:
+                    print("✗ Error al cargar Fase 2, volviendo a Fase 1")
+                    self._start_intro()
             else:
-                print("✗ Error al cargar datos previos, volviendo a Fase 1")
+                print("✗ Error al cargar Fase 1, volviendo a Fase 1")
                 self._start_intro()
-                
         elif selected_phase == 2:
             print("\n✓ Iniciando directamente en Fase 2...")
-            if self._load_phase1_calibration():
-                self._load_board_config()
-                self._start_phase2()
+            phase1_ok = self._load_phase1_calibration()
+            if phase1_ok:
+                # Verificar que los calibradores están correctamente inicializados
+                if self.calibrator_left and self.calibrator_left.is_calibrated and \
+                   self.calibrator_right and self.calibrator_right.is_calibrated:
+                    self._load_board_config()
+                    print("✓ Calibración previa de Fase 1 válida. Iniciando Fase 2...")
+                    # Reiniciar timer y estado por seguridad
+                    if self.timer.isActive():
+                        self.timer.stop()
+                    self.current_phase = None
+                    self._start_phase2()
+                else:
+                    print("✗ Calibración previa de Fase 1 incompleta o inválida. Volviendo a Fase 1.")
+                    self.window.set_status("No se encontró calibración previa válida de Fase 1. Debes completarla antes de Fase 2.", "#FF0000")
+                    self._start_intro()
             else:
                 print("✗ Error al cargar datos previos, volviendo a Fase 1")
+                self.window.set_status("Error al cargar calibración previa. Debes completar Fase 1.", "#FF0000")
                 self._start_intro()
-                
         else:
             # Fase 1 (Default)
             self._start_intro()
@@ -283,10 +394,12 @@ class QtCalibrationManager(QObject):
         # Importar configuración estéreo
         from ..vision.stereo_config import StereoConfig
 
-        # Rotación 180 grados si es necesario (cámaras invertidas)
-        # Usamos flip(-1) para volver a la orientación real (sin espejo).
+        # Aplicar transformación según configuración
+        # IMPORTANTE: Debe coincidir con la transformación usada en las UIs
         if hasattr(StereoConfig, 'ROTATE_CAMERAS_180') and StereoConfig.ROTATE_CAMERAS_180:
             frame = cv2.flip(frame, -1)
+        elif hasattr(StereoConfig, 'MIRROR_HORIZONTAL') and StereoConfig.MIRROR_HORIZONTAL:
+            frame = cv2.flip(frame, 1)
 
         # Detectar tablero
         detected, corners, frame_overlay = self.current_calibrator.detect_chessboard(frame)
@@ -391,8 +504,10 @@ class QtCalibrationManager(QObject):
     
     def _start_phase2(self):
         """Inicia la Fase 2: calibración estéreo"""
+        # Reiniciar timer si está activo
+        if self.timer.isActive():
+            self.timer.stop()
         self.current_phase = "stereo_intro"
-        
         instructions = [
             "Ahora calibraremos el <b>par estéreo</b>",
             "Coloca el tablero visible en <b>AMBAS cámaras</b> simultáneamente",
@@ -400,12 +515,10 @@ class QtCalibrationManager(QObject):
             "Varía la posición y orientación del tablero entre capturas",
             "Asegúrate de que el tablero esté completamente visible en ambas vistas"
         ]
-        
         self.window.show_intro_screen(
             "FASE 2 - CALIBRACIÓN ESTÉREO",
             instructions
         )
-        
         self.current_phase = "stereo_intro"
     
     def _on_stereo_continue(self):
@@ -458,10 +571,13 @@ class QtCalibrationManager(QObject):
         # Importar configuración estéreo
         from ..vision.stereo_config import StereoConfig
 
-        # Rotación 180 grados si es necesario (cámaras invertidas)
+        # Aplicar transformación según configuración (igual que en UIs)
         if hasattr(StereoConfig, 'ROTATE_CAMERAS_180') and StereoConfig.ROTATE_CAMERAS_180:
             frame_left = cv2.flip(frame_left, -1)
             frame_right = cv2.flip(frame_right, -1)
+        elif hasattr(StereoConfig, 'MIRROR_HORIZONTAL') and StereoConfig.MIRROR_HORIZONTAL:
+            frame_left = cv2.flip(frame_left, 1)
+            frame_right = cv2.flip(frame_right, 1)
 
         # Detectar tablero en ambas cámaras
         detected_both, corners_left, corners_right, display_left, display_right = \
@@ -570,21 +686,20 @@ class QtCalibrationManager(QObject):
         self.current_phase = "depth_intro"
         
         instructions = [
-            "Finalmente, calibraremos la <b>profundidad</b>",
-            "Necesitarás mostrar tu <b>mano</b> a la cámara",
-            "Podrás ingresar las distancias que deseas medir",
-            "<b>IMPORTANTE:</b> Mide la distancia desde la <b>Cámara Izquierda</b>",
-            "El sistema detectará los puntos clave de tu mano",
-            "Capturaremos varias mediciones para ajustar el modelo"
+            "Finalmente, calibraremos la <b>distancia del teclado</b>",
+            "Pon tu <b>mano</b> en el lugar donde tocarás las teclas",
+            "Mantén la mano <b>apoyada</b> sobre el teclado/mesa",
+            "El sistema medirá la distancia automáticamente",
+            "Capturaremos <b>5 muestras</b> para mayor precisión"
         ]
         
         self.window.show_intro_screen(
-            "FASE 3 - CALIBRACIÓN DE PROFUNDIDAD",
+            "FASE 3 - CALIBRACIÓN DE DISTANCIA",
             instructions
         )
     
     def _start_depth_capture(self):
-        """Inicia la captura de profundidad"""
+        """Inicia la captura de profundidad simplificada"""
         try:
             # Inicializar componentes de visión
             if self.hand_detector is None:
@@ -601,31 +716,12 @@ class QtCalibrationManager(QObject):
             # Inicializar calibrador de profundidad
             self.depth_calibrator = DepthCalibrator(self.depth_estimator)
             
-            # Pedir distancias al usuario
-            distances_str, ok = QInputDialog.getText(
-                self.window, 
-                "Configurar Distancias",
-                "Ingresa las distancias a medir en cm (separadas por coma):",
-                text="30, 40, 50, 60"
-            )
-            
-            if ok and distances_str:
-                try:
-                    self.depth_distances = [float(d.strip()) for d in distances_str.split(',') if d.strip()]
-                    self.depth_distances.sort()
-                except ValueError:
-                    print("⚠ Error en formato de distancias, usando por defecto")
-                    self.depth_distances = [30, 40, 50, 60]
-            else:
-                # Si cancela o vacío, usar por defecto
-                self.depth_distances = [30, 40, 50, 60]
-            
-            if len(self.depth_distances) < 3:
-                 print("⚠ Se recomiendan al menos 3 distancias. Agregando valores por defecto.")
-                 self.depth_distances = [30, 40, 50, 60]
+            # Configurar número de muestras (simplificado)
+            self.keyboard_samples_needed = 5
+            self.keyboard_samples_collected = 0
 
             # Mostrar estado
-            self.window.set_status("Iniciando cámaras para profundidad...", "#FFA500")
+            self.window.set_status("Iniciando cámaras...", "#FFA500")
             QApplication.processEvents()
             
             # Abrir cámaras si están cerradas
@@ -654,8 +750,15 @@ class QtCalibrationManager(QObject):
                 
             # Actualizar UI
             self.current_phase = "depth_capture"
-            self.window.set_phase(self.current_phase, "FASE 3 - PROFUNDIDAD")
-            self.window.show_depth_instructions(self.depth_distances[0], 0, len(self.depth_distances))
+            self.window.set_phase(self.current_phase, "FASE 3 - DISTANCIA DEL TECLADO")
+            self.window.set_status("Pon tu mano sobre el teclado y presiona ESPACIO o CAPTURAR", "#00BFFF")
+            self.window.set_instructions(
+                f"<b>Muestra {self.keyboard_samples_collected + 1} de {self.keyboard_samples_needed}</b><br>"
+                "Mantén la mano apoyada en el plano del teclado<br>"
+                "<span style='color: #FFD700;'>Nota: El valor mostrado puede parecer incorrecto, es normal</span>"
+            )
+            self.window.show_continue_button(False)  # Mostrar botón de captura, no continuar
+            self.window.enable_capture(True)  # Habilitar captura desde el inicio
             
             # Iniciar timer
             if not self.timer.isActive():
@@ -682,10 +785,13 @@ class QtCalibrationManager(QObject):
         # Importar configuración estéreo
         from ..vision.stereo_config import StereoConfig
 
-        # Rotación 180 grados si es necesario (cámaras invertidas)
+        # Aplicar transformación según configuración (igual que en UIs)
         if hasattr(StereoConfig, 'ROTATE_CAMERAS_180') and StereoConfig.ROTATE_CAMERAS_180:
-            frame_left = cv2.flip(frame_left, 0)
-            frame_right = cv2.flip(frame_right, 0)
+            frame_left = cv2.flip(frame_left, -1)
+            frame_right = cv2.flip(frame_right, -1)
+        elif hasattr(StereoConfig, 'MIRROR_HORIZONTAL') and StereoConfig.MIRROR_HORIZONTAL:
+            frame_left = cv2.flip(frame_left, 1)
+            frame_right = cv2.flip(frame_right, 1)
 
         # Copias para visualización
         display_left = frame_left.copy()
@@ -710,15 +816,31 @@ class QtCalibrationManager(QObject):
         if landmarks_left and landmarks_right:
             depth = self.depth_calibrator.calculate_depth(landmarks_left, landmarks_right)
             
-            if depth is not None:
+            if depth is not None and depth > 0:
                 self.last_depth_value = depth
-                self.window.set_status(f"Mano detectada - Profundidad medida: {depth:.1f} cm", "#00FF00")
+                self.window.set_status(
+                    f"✓ Mano detectada - Distancia: {depth:.1f} cm - ¡PRESIONA ESPACIO o CAPTURAR!", 
+                    "#00FF00"
+                )
+                self.window.enable_capture(True)
+            elif depth is not None:
+                # Profundidad negativa o cero - problema de triangulación
+                self.last_depth_value = abs(depth) if depth != 0 else 50  # Valor temporal
+                self.window.set_status(
+                    f"⚠ Distancia estimada: {abs(depth):.1f} cm - Puedes capturar", 
+                    "#FFA500"
+                )
                 self.window.enable_capture(True)
             else:
                 self.window.set_status("Calculando profundidad...", "#FFA500")
                 self.window.enable_capture(False)
         else:
-            self.window.set_status("Muestra tu mano en AMBAS cámaras", "#FFA500")
+            status_msg = "Muestra tu mano en "
+            if not landmarks_left:
+                status_msg += "CÁMARA IZQUIERDA "
+            if not landmarks_right:
+                status_msg += "CÁMARA DERECHA"
+            self.window.set_status(status_msg, "#FFA500")
             self.window.enable_capture(False)
             
         # Guardar landmarks para captura
@@ -729,25 +851,22 @@ class QtCalibrationManager(QObject):
         self.window.update_frames(display_left, display_right)
 
     def _capture_depth_measurement(self):
-        """Captura una medición de profundidad"""
+        """Captura una muestra de la distancia del teclado"""
         if self.last_depth_value is None:
             return
             
-        # Obtener distancia real esperada
-        current_idx = len(self.depth_calibrator.measurements)
-        
-        if current_idx >= len(self.depth_distances):
-            return
-            
-        real_dist = self.depth_distances[current_idx]
-        
-        # Agregar medición
-        self.depth_calibrator.add_measurement(real_dist, self.last_depth_value)
+        # Agregar muestra de distancia del teclado
+        self.depth_calibrator.add_keyboard_distance_sample(self.last_depth_value)
+        self.keyboard_samples_collected += 1
         
         # Actualizar UI
-        next_idx = current_idx + 1
-        if next_idx < len(self.depth_distances):
-            self.window.show_depth_instructions(self.depth_distances[next_idx], next_idx, len(self.depth_distances))
+        if self.keyboard_samples_collected < self.keyboard_samples_needed:
+            self.window.set_instructions(
+                f"<b>Muestra {self.keyboard_samples_collected + 1} de {self.keyboard_samples_needed}</b><br>"
+                f"Última medición: {self.last_depth_value:.1f} cm<br>"
+                "Mantén la mano apoyada y presiona CAPTURAR"
+            )
+            self.window.set_status(f"✓ Muestra {self.keyboard_samples_collected} capturada", "#00FF00")
         else:
             # Finalizar
             self._finish_phase3()
@@ -756,20 +875,23 @@ class QtCalibrationManager(QObject):
         """Finaliza la Fase 3"""
         self.timer.stop()
         
-        # Calcular corrección
-        factor = self.depth_calibrator.calculate_and_save()
+        # Calcular distancia del teclado
+        keyboard_distance = self.depth_calibrator.calculate_keyboard_distance()
         
-        if factor is None:
-            print("✗ Error en calibración de profundidad")
+        if keyboard_distance is None:
+            print("✗ Error en calibración de distancia")
             self._finish_calibration(False)
             return
+        
+        # Guardar la distancia del teclado
+        self.depth_calibrator.save_keyboard_distance_only()
             
         # Recopilar datos para el resumen
         summary_data = {
             'board_config': f"{self.board_cols}x{self.board_rows} ({self.square_size_mm}mm)",
-            'left_error': self.calibrator_left.reprojection_error,
-            'right_error': self.calibrator_right.reprojection_error,
-            'correction_factor': factor
+            'left_error': self.calibrator_left.reprojection_error if self.calibrator_left else 'N/A',
+            'right_error': self.calibrator_right.reprojection_error if self.calibrator_right else 'N/A',
+            'keyboard_distance': keyboard_distance
         }
         
         # Agregar datos estéreo si existen
@@ -1042,7 +1164,14 @@ def run_qt_calibration(cam_left_id=1, cam_right_id=2):
     Returns:
         bool: True si fue exitosa
     """
-    app = QApplication(sys.argv)
+    from PyQt6.QtCore import QEventLoop
+    
+    # Reutilizar QApplication existente si ya hay una
+    app = QApplication.instance()
+    if not app:
+        app = QApplication(sys.argv)
+    
+    print("[DEBUG] Creando QtCalibrationManager...")
     
     manager = QtCalibrationManager(
         cam_left_id=cam_left_id,
@@ -1052,15 +1181,37 @@ def run_qt_calibration(cam_left_id=1, cam_right_id=2):
     
     # Variable para capturar resultado
     result = [False]
+    finished_flag = [False]
     
     def on_finished(success):
+        print(f"[DEBUG] Calibración terminada con resultado: {success}")
         result[0] = success
-        app.quit()
+        finished_flag[0] = True
     
     manager.finished.connect(on_finished)
+    
+    print("[DEBUG] Ejecutando run_calibration()...")
+    
+    # Iniciar calibración
     manager.run_calibration()
     
-    app.exec()
+    # Si ya terminó (usuario canceló el diálogo de configuración), retornar
+    if finished_flag[0]:
+        print("[DEBUG] Calibración terminó inmediatamente (diálogo cancelado)")
+        return result[0]
+    
+    print("[DEBUG] Entrando en event loop local...")
+    
+    # Usar un event loop local que no afecte la app principal
+    loop = QEventLoop()
+    
+    def exit_loop(success):
+        loop.quit()
+    
+    manager.finished.connect(exit_loop)
+    loop.exec()
+    
+    print(f"[DEBUG] Event loop terminado, resultado: {result[0]}")
     
     return result[0]
 

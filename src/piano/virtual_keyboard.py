@@ -96,20 +96,50 @@ class VirtualKeyboard():
         font_thickness = 2
         text_color = (0, 0, 0) # Negro elegante
 
+        # Verificar si estamos en modo espejo
+        is_mirrored = getattr(StereoConfig, 'MIRROR_HORIZONTAL', False)
+
         for p in range(self.kb_white_n_keys):
+            # En modo espejo, invertir el índice visual para dibujar
+            # pero mantener la lógica de detección igual
+            if is_mirrored:
+                visual_p = self.kb_white_n_keys - 1 - p
+            else:
+                visual_p = p
+            
             x_line_pos = self.kb_x0 + self.white_key_width * (p+1)
 
             # --- DIBUJAR TECLAS NEGRAS ---
-            if p not in self.keys_without_black:
-                if p in (0, 3, 4): # Izquierda
-                    b_bk_x0 = int(round_half_up(x_line_pos - self.black_key_width*(2/3)))
-                    b_bk_x1 = int(round_half_up(x_line_pos + self.black_key_width*(1/3)))
-                elif p in (1, 5): # Derecha
-                    b_bk_x0 = int(round_half_up(x_line_pos - self.black_key_width*(1/3)))
-                    b_bk_x1 = int(round_half_up(x_line_pos + self.black_key_width*(2/3)))
-                else: # Centro
-                    b_bk_x0 = int(round_half_up(x_line_pos - self.black_key_width/2))
-                    b_bk_x1 = int(round_half_up(x_line_pos + self.black_key_width/2))
+            # En modo espejo usamos visual_p para determinar qué teclas tienen negras
+            check_p = visual_p if is_mirrored else p
+            
+            # Las teclas sin negra son: Mi (2), Si (6) en cada octava
+            keys_without_black_visual = [2, 6, 9, 13]  # Mi y Si de cada octava
+            
+            if check_p not in keys_without_black_visual:
+                # Determinar posición de la tecla negra según el patrón del piano
+                # En modo espejo, las posiciones también se invierten
+                if is_mirrored:
+                    # Invertir la lógica de posicionamiento
+                    if check_p % 7 in (0, 3, 4):  # Do#, Fa#, Sol#
+                        b_bk_x0 = int(round_half_up(x_line_pos - self.black_key_width*(1/3)))
+                        b_bk_x1 = int(round_half_up(x_line_pos + self.black_key_width*(2/3)))
+                    elif check_p % 7 in (1, 5):  # Re#, La#
+                        b_bk_x0 = int(round_half_up(x_line_pos - self.black_key_width*(2/3)))
+                        b_bk_x1 = int(round_half_up(x_line_pos + self.black_key_width*(1/3)))
+                    else:
+                        b_bk_x0 = int(round_half_up(x_line_pos - self.black_key_width/2))
+                        b_bk_x1 = int(round_half_up(x_line_pos + self.black_key_width/2))
+                else:
+                    if p in (0, 3, 4): # Izquierda
+                        b_bk_x0 = int(round_half_up(x_line_pos - self.black_key_width*(2/3)))
+                        b_bk_x1 = int(round_half_up(x_line_pos + self.black_key_width*(1/3)))
+                    elif p in (1, 5): # Derecha
+                        b_bk_x0 = int(round_half_up(x_line_pos - self.black_key_width*(1/3)))
+                        b_bk_x1 = int(round_half_up(x_line_pos + self.black_key_width*(2/3)))
+                    else: # Centro
+                        b_bk_x0 = int(round_half_up(x_line_pos - self.black_key_width/2))
+                        b_bk_x1 = int(round_half_up(x_line_pos + self.black_key_width/2))
 
                 # Tecla negra rellena
                 cv2.rectangle(
@@ -141,8 +171,8 @@ class VirtualKeyboard():
 
             # --- ETIQUETAS DE NOTAS (Nuevo diseño limpio) ---
             
-            # 1. Obtener nombre de la nota
-            note_name = self.white_key_names[p % 7]
+            # 1. Obtener nombre de la nota (usando visual_p para modo espejo)
+            note_name = self.white_key_names[visual_p % 7]
             
             # 2. Calcular el tamaño exacto del texto para centrarlo
             (text_w, text_h), baseline = cv2.getTextSize(note_name, font_face, font_scale, font_thickness)
@@ -182,6 +212,12 @@ class VirtualKeyboard():
         return key_id
 
     def find_key(self, x_pos, y_pos):
+        # Si está activado el modo espejo, invertir la posición X
+        # para que las notas coincidan con la vista espejada.
+        if getattr(StereoConfig, 'MIRROR_HORIZONTAL', False):
+            # Invertir X respecto al centro del teclado
+            x_pos = self.kb_x0 + (self.kb_x1 - x_pos)
+        
         x = x_pos - self.kb_x0
         y = y_pos - self.kb_y0
 
@@ -193,13 +229,19 @@ class VirtualKeyboard():
             if key == -1:
                 key = x/self.white_key_width
                 key = math.floor(key)
-                return self.__white_map[int(key)]
+                if int(key) in self.__white_map:
+                    return self.__white_map[int(key)]
+                return None
             else:
-                return self.__black_map[int(key)]
+                if int(key) in self.__black_map:
+                    return self.__black_map[int(key)]  # Puede ser None para teclas sin negra
+                return None
         else:
             key = x/self.white_key_width
             key = math.floor(key)
-            return self.__white_map[int(key)]
+            if int(key) in self.__white_map:
+                return self.__white_map[int(key)]
+            return None
 
     def note_from_key(self, key):
         return self.__keyboard_piano_map[key]

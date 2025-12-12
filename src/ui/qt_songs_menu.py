@@ -252,17 +252,12 @@ def show_songs_menu(songs):
         str or None: Nombre de la canción seleccionada, o None si canceló
     """
     app = QApplication.instance()
-    owns_app = False
     if app is None:
         app = QApplication(sys.argv)
-        owns_app = True
     
     dialog = SongsMenuDialog(songs)
     result = dialog.exec()
     
     selected = dialog.selected_song_name if result == QDialog.DialogCode.Accepted else None
-    
-    if owns_app:
-        app.quit()
     
     return selected
