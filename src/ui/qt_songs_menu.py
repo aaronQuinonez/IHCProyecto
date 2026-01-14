@@ -87,6 +87,8 @@ class SongsMenuDialog(QDialog):
                 background-color: {Theme.to_hex(Theme.BTN_PRIMARY_BG)};
                 border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
                 color: {Theme.to_hex(Theme.BTN_PRIMARY_TEXT)};
+                border-radius: 20px;
+                padding: 10px 25px;
             }}
             QPushButton#backButton:hover {{
                 background-color: {Theme.to_hex(Theme.ORANGE_VIVID)};

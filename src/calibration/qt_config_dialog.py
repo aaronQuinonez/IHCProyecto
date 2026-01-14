@@ -242,7 +242,7 @@ class CalibrationConfigDialog(QDialog):
         cancel_btn = QPushButton("Cancelar")
         cancel_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {Theme.to_hex(Theme.BTN_DANGER_BG)};
+                background-color: #E57373;
                 color: {Theme.to_hex(Theme.BTN_DANGER_TEXT)};
                 border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
                 padding: 10px 20px;
@@ -251,7 +251,7 @@ class CalibrationConfigDialog(QDialog):
                 font-family: 'Comic Sans MS', 'Arial';
             }}
             QPushButton:hover {{
-                background-color: {Theme.to_hex(Theme.RED_VIVID)};
+                background-color: #B71C1C;
             }}
             QPushButton:pressed {{
                 background-color: #8B0000;

@@ -87,7 +87,7 @@ class FreeModeWindow(QMainWindow):
                 color: #FFFFFF;
             }}
             QPushButton#ExitBtn {{
-                background-color: {Theme.to_hex(Theme.BTN_DANGER_BG)}; 
+                background-color: #E57373; /* Rojo más claro */
                 color: {Theme.to_hex(Theme.BTN_DANGER_TEXT)}; 
                 font-weight: bold;
                 border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
@@ -95,7 +95,7 @@ class FreeModeWindow(QMainWindow):
                 padding: 10px 18px;
             }}
             QPushButton#ExitBtn:hover {{ 
-                background-color: {Theme.to_hex(Theme.RED_VIVID)}; 
+                background-color: #B71C1C; /* Rojo más oscuro al pasar el cursor */
             }}
             QFrame#CameraContainer {{ border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)}; border-radius: 8px; background-color: #000; }}
         """)

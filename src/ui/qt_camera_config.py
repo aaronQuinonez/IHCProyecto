@@ -151,12 +151,12 @@ class CameraConfigDialog(QDialog):
                 border-color: {Theme.to_hex(Theme.BLUE_VIVID)};
             }}
             QPushButton#cancelButton {{
-                background-color: {Theme.to_hex(Theme.BTN_DANGER_BG)};
+                background-color: #E57373; /* Rojo más claro */
                 color: {Theme.to_hex(Theme.BTN_DANGER_TEXT)};
                 border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
             }}
             QPushButton#cancelButton:hover {{
-                background-color: {Theme.to_hex(Theme.RED_VIVID)};
+                background-color: #B71C1C; /* Rojo más oscuro */
             }}
             QPushButton#cancelButton:pressed {{
                 background-color: #8B0000;
@@ -175,14 +175,14 @@ class CameraConfigDialog(QDialog):
                 border-color: {Theme.to_hex(Theme.BLUE_VIVID)};
             }}
             QPushButton#photoButton {{
-                background-color: {Theme.to_hex(Theme.BTN_SUCCESS_BG)};
+                background-color: #81C784; /* Verde más claro */
                 color: {Theme.to_hex(Theme.BTN_SUCCESS_TEXT)};
                 padding: 8px 16px;
                 font-size: 14px;
                 border-radius: 15px;
             }}
             QPushButton#photoButton:hover {{
-                background-color: {Theme.to_hex(Theme.GREEN_VIVID)};
+                background-color: #388E3C; /* Verde más oscuro */
             }}
             QPushButton#photoButton:pressed {{
                 background-color: #2E7D32;
@@ -312,7 +312,7 @@ class CameraConfigDialog(QDialog):
         # Estilo directo para asegurar que se aplique, ya que el stylesheet global puede tener problemas
         self.cancel_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {Theme.to_hex(Theme.BTN_DANGER_BG)};
+                background-color: #E57373; /* Rojo más claro */
                 color: {Theme.to_hex(Theme.BTN_DANGER_TEXT)};
                 border: 2px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
                 padding: 10px 20px;
@@ -321,7 +321,7 @@ class CameraConfigDialog(QDialog):
                 font-weight: bold;
             }}
             QPushButton:hover {{
-                background-color: {Theme.to_hex(Theme.RED_VIVID)};
+                background-color: #B71C1C; /* Rojo más oscuro */
             }}
             QPushButton:pressed {{
                 background-color: #8B0000;

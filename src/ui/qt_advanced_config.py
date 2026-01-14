@@ -548,7 +548,7 @@ class AdvancedConfigDialog(QDialog):
         close_btn.clicked.connect(self.accept)
         close_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {Theme.to_hex(Theme.BTN_SUCCESS_BG)};
+                background-color: #81C784; /* Verde más claro */
                 color: {Theme.to_hex(Theme.BTN_SUCCESS_TEXT)};
                 border: 3px solid {Theme.to_hex(Theme.BORDER_DEFAULT)};
                 padding: 10px 30px;
@@ -558,7 +558,7 @@ class AdvancedConfigDialog(QDialog):
                 font-family: 'Comic Sans MS', 'Arial';
             }}
             QPushButton:hover {{
-                background-color: {Theme.to_hex(Theme.GREEN_VIVID)};
+                background-color: #388E3C; /* Verde más oscuro */
             }}
             QPushButton:pressed {{
                 background-color: #2E7D32;
