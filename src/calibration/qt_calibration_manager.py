@@ -110,6 +110,8 @@ class QtCalibrationManager(QObject):
         
         # Asegurar directorios
         CalibrationConfig.ensure_directories()
+        
+        self.last_frame = None
     
     def _get_or_create_camera(self, camera_name):
         """
@@ -1450,15 +1452,15 @@ class QtCalibrationManager(QObject):
         self.table_corners = []
         
         instructions = [
-            "<b>CONFIGURACIÓN DE PROYECCIÓN AR</b>",
-            "Para proyectar el teclado sobre tu mesa:",
-            "1. Haz CLIC en el video de la <b>CÁMARA IZQUIERDA</b> para marcar las 4 esquinas.",
+            "<b>FASE 4 - POSICIONAMIENTO AR</b>",
+            "Define el área real donde aparecerá tu teclado virtual:",
+            "1. Haz CLIC en el video de la <b>CÁMARA IZQUIERDA</b>.",
             "2. Orden: <b>Arriba-Izq -> Arriba-Der -> Abajo-Der -> Abajo-Izq</b>",
-            "¡Marca el área rectangular donde quieres que aparezca el piano!"
+            "<span style='color: #00FF00;'>TIP: Si tienes un marcador ArUco en la mesa, asegúrate de que sea visible.</span>"
         ]
         
         self.window.show_intro_screen(
-            "DEFINICIÓN DE SUPERFICIE",
+            "FASE 4: POSICIONAMIENTO AR",
             instructions
         )
         
@@ -1467,7 +1469,101 @@ class QtCalibrationManager(QObject):
              self.cap_left = self._get_or_create_camera("left")
         
         self.timer.start(33)
-        self.window.set_status("Haz clic en la CÁMARA IZQUIERDA para empezar", "#FFFFFF")
+        self.window.set_status("Haz clic en la CÁMARA IZQUIERDA para marcar 4 esquinas", "#FFFFFF")
+
+    def _ask_aruco_size(self):
+        """Muestra un diálogo para que el usuario ingrese el tamaño del marcador ArUco"""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QDoubleSpinBox, QPushButton
+        from PyQt6.QtCore import Qt
+        from src.vision.stereo_config import StereoConfig
+        from src.config.theme import Theme
+        
+        # Colores del tema
+        bg_color = Theme.to_hex(Theme.BG_GRADIENT_START)
+        text_color = Theme.to_hex(Theme.TEXT_PRIMARY)
+        highlight_color = Theme.to_hex(Theme.ARUCO_MARKER_OUTLINE)
+        btn_color = Theme.to_hex(Theme.SUCCESS)
+        
+        dialog = QDialog(self.window)
+        dialog.setWindowTitle("Configuración ArUco")
+        dialog.setModal(True)
+        dialog.setFixedSize(420, 280)
+        dialog.setStyleSheet(f"""
+            QDialog {{ background-color: {bg_color}; }}
+            QLabel {{ color: {text_color}; font-family: 'Comic Sans MS'; font-size: 13px; }}
+            QLabel#title {{ color: {highlight_color}; font-size: 18px; font-weight: bold; }}
+            QDoubleSpinBox {{ 
+                background-color: #333; color: white; border: 2px solid {highlight_color};
+                padding: 8px; font-size: 18px; border-radius: 5px; min-width: 120px;
+            }}
+            QPushButton {{ 
+                background-color: {btn_color}; color: black; font-weight: bold;
+                padding: 12px 24px; border-radius: 5px; min-width: 120px; font-size: 14px;
+            }}
+            QPushButton:hover {{ background-color: #33FF66; }}
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(20)
+        layout.setContentsMargins(30, 30, 30, 30)
+        
+        title = QLabel("TAMAÑO DEL MARCADOR ARUCO")
+        title.setObjectName("title")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+        
+        desc = QLabel("Ingresa el tamaño real (en cm) del marcador que imprimiste:")
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+        
+        # Input
+        input_layout = QHBoxLayout()
+        input_layout.addStretch()
+        
+        self.aruco_size_spin = QDoubleSpinBox()
+        self.aruco_size_spin.setRange(5.0, 50.0)
+        self.aruco_size_spin.setValue(StereoConfig.ARUCO_MARKER_SIZE_CM)
+        self.aruco_size_spin.setSuffix(" cm")
+        self.aruco_size_spin.setDecimals(1)
+        input_layout.addWidget(self.aruco_size_spin)
+        
+        input_layout.addStretch()
+        layout.addLayout(input_layout)
+        
+        # Botones
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        
+        ok_btn = QPushButton("FINALIZAR")
+        ok_btn.clicked.connect(lambda: self._on_aruco_size_entered(dialog))
+        btn_layout.addWidget(ok_btn)
+        
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
+        
+        dialog.exec()
+
+    def _on_aruco_size_entered(self, dialog):
+        """Procesa el tamaño del marcador y guarda la configuración final"""
+        size = self.aruco_size_spin.value()
+        from src.vision.stereo_config import StereoConfig
+        StereoConfig.ARUCO_MARKER_SIZE_CM = size
+        
+        # Guardar en archivo de calibración permanentemente
+        self._save_table_definition(size_cm=size)
+        
+        dialog.accept()
+        
+        # Mostrar mensaje final
+        self.window.show_intro_screen(
+            "¡CALIBRACIÓN FINALIZADA!",
+            [
+                "Has completado todas las fases con éxito.",
+                f"Teclado AR configurado con ArUco ({size} cm).",
+                "Puedes empezar a tocar en el menú principal."
+            ]
+        )
+        self.current_phase = "table_definition_complete"
 
     def _update_table_definition_frame(self):
         """Muestra el video y dibuja los puntos marcados"""
@@ -1481,37 +1577,65 @@ class QtCalibrationManager(QObject):
         if frame_left is None:
             return
             
-        # Dibujar puntos y líneas
-        display = frame_left.copy()
+        # Guardar último frame para el proceso de guardado (vincular ArUco)
+        self.last_frame = frame_left.copy()
         
-        # Aplicar transformaciones para display (espejo si es necesario)
-        # OJO: Los clics vienen de la pantalla TRANSFORMA.
-        # ¿Debemos dibujar en el Raw y transformar? O dibujar en el Transformado?
-        # StereoConfig.apply_camera_transforms hace rectificación.
-        # StereoConfig.apply_display_transform hace espejo/resize.
-        # Si el usuario ve ESPEJO, sus clics tendrán coordenadas ESPEJO.
-        # DEBERÍAMOS guardar las coordenadas "Normalizadas" (sin espejo).
-        # PERO para visualización, dibujamos sobre lo que ve.
+        # Aplicar transformaciones RAW para coincidir con la detección 3D
+        frame_raw = StereoConfig.apply_camera_transforms(frame_left)
         
-        # Simplificación: Usamos el frame TAL CUAL se muestra en la UI para display
-        display = StereoConfig.apply_display_transform(StereoConfig.apply_camera_transforms(display))
+        # Intentar detectar ArUco para feedback visual
+        from src.vision.aruco_detector import ArucoDetector
+        from src.config.theme import Theme
+        import cv2
+        import numpy as np
+        # Usamos calibración si existe
+        cam_matrix = None
+        dist_coeffs = None
+        if self.calibrator_left and self.calibrator_left.is_calibrated:
+            cam_matrix = self.calibrator_left.camera_matrix
+            dist_coeffs = self.calibrator_left.distortion_coeffs
+            
+        det = ArucoDetector(cam_matrix, dist_coeffs)
+        aruco_result = det.detect(frame_raw)
+        marker_found = aruco_result['detected']
 
-        # Dibujar esquinas marcadas
+        # Preparar Display (Espejo para visualización)
+        display = StereoConfig.apply_display_transform(frame_raw)
+
+        # Dibujar ArUco si se encuentra
+        if marker_found and aruco_result['corners_2d'] is not None:
+            # Dibujar contorno del marcador (en espejo)
+            m_corners = aruco_result['corners_2d'].reshape(-1, 2).astype(np.int32)
+            for j in range(4):
+                p1 = tuple(m_corners[j])
+                p2 = tuple(m_corners[(j+1)%4])
+                # Aplicar espejo a los puntos para dibujar sobre el display transformado
+                # (StereoConfig.apply_display_transform hace rotate_180 por defecto)
+                h, w = display.shape[:2]
+                dp1 = (w - p1[0], h - p1[1])
+                dp2 = (w - p2[0], h - p2[1])
+                cv2.line(display, dp1, dp2, Theme.ARUCO_MARKER_OUTLINE, 2, cv2.LINE_AA)
+            
+            # Texto indicando vínculo
+            cv2.putText(display, f"ARUCO DETECTADO (ID:{det.marker_id})", (50, 50),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, Theme.ARUCO_MARKER_OUTLINE, 2)
+
+        # Dibujar esquinas marcadas (ya vienen en coordenadas finales display-ready si las guardamos bien)
+        # Ojo: _on_frame_clicked guarda 'real_x', 'real_y' que son del display?
+        # Revisando: el click viene del label, se escala al frame. 
+        # Si el frame mostrado es DisplayTransform, entonces 'real_x' es del Display.
         for i, pt in enumerate(self.table_corners):
-            cv2.circle(display, pt, 5, (0, 255, 0), -1)
-            cv2.putText(display, str(i+1), (pt[0]+10, pt[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.circle(display, pt, 8, (0, 255, 0), -1, cv2.LINE_AA)
+            cv2.putText(display, str(i+1), (pt[0]+15, pt[1]-15), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2, cv2.LINE_AA)
             
-        # Dibujar líneas
+        # Dibujar líneas entre puntos
         if len(self.table_corners) > 1:
-            for i in range(len(self.table_corners)-1):
-                cv2.line(display, self.table_corners[i], self.table_corners[i+1], (0, 255, 0), 2)
-        
-        # Cerrar el polígono
-        if len(self.table_corners) == 4:
-            cv2.line(display, self.table_corners[3], self.table_corners[0], (0, 255, 0), 2)
+            pts_arr = np.array(self.table_corners, np.int32)
+            cv2.polylines(display, [pts_arr], len(self.table_corners) == 4, 
+                         (0, 255, 0), 2, cv2.LINE_AA)
             
-        self.window.update_frames(frame_left=display) 
-        
+        self.window.update_frames(frame_left=display)        
     def _on_frame_clicked(self, camera_name, x, y):
         """Maneja el clic en el video"""
         if self.current_phase != "table_definition":
@@ -1555,26 +1679,97 @@ class QtCalibrationManager(QObject):
             if count < 4:
                 self.window.set_status(f"Punto {count}/4 guardado. {msgs[count-1]}", "#00C8FF")
             else:
-                self.window.set_status("¡DEFINICIÓN COMPLETA! Se ha guardado la mesa.", "#00FF00")
-                self.current_phase = "table_definition_complete"
-                self._save_table_definition()
+                self.window.set_status("¡PUNTOS MARCADOS! Configura el marcador ArUco...", "#00FF00")
+                self.current_phase = "table_definition_waiting_size"
                 
-                # Auto-avanzar o esperar? Esperar 1seg y mostrar mensaje final
-                QTimer.singleShot(1500, lambda: self.window.show_intro_screen(
-                    "¡CALIBRACIÓN FINALIZADA!",
-                    ["Has completado todas las fases.", "Tu piano AR está listo.", "Presiona Continuar para salir."]
-                ))
+                # Esperar un poco antes de mostrar el diálogo para que el usuario vea el polígono
+                QTimer.singleShot(1000, self._ask_aruco_size)
 
-    def _save_table_definition(self):
-        """Guarda la definición de mesa en calibration.json"""
-        # Obtener resolución real usada para la definición
-        frame_w, frame_h = 1280, 720 # Valor por defecto seguro si todo falla
-        if self.cap_left:
-            cw = self.cap_left.video_width
-            ch = self.cap_left.video_height
-            if cw > 0 and ch > 0:
-                frame_w, frame_h = int(cw), int(ch)
+    def _save_table_definition(self, size_cm=15.0):
+        """
+        Guarda la definición de mesa en calibration.json.
+        Si se detecta un marcador ArUco, calcula el offset relativo 3D.
+        """
+        from src.vision.aruco_detector import ArucoDetector
+        from src.vision.stereo_config import StereoConfig
         
+        # Obtener resolución real
+        frame_w, frame_h = 1280, 720
+        if self.cap_left:
+            cw, ch = self.cap_left.video_width, self.cap_left.video_height
+            if cw > 0 and ch > 0: frame_w, frame_h = int(cw), int(ch)
+        
+        # Intentar detectar ArUco en el último frame para vinculación 3D
+        aruco_data = None
+        if self.last_frame is not None:
+            # Necesitamos la matriz de la cámara para pose 3D
+            with open(CalibrationConfig.CALIBRATION_FILE, 'r') as f:
+                cal_data = json.load(f)
+            
+            cam_matrix = np.array(cal_data['left_camera']['camera_matrix'])
+            dist_coeffs = np.array(cal_data['left_camera']['distortion_coeffs'])
+            
+            from src.vision.stereo_config import StereoConfig
+            
+            det = ArucoDetector(cam_matrix, dist_coeffs, marker_size_cm=size_cm, marker_id=StereoConfig.ARUCO_MARKER_ID)
+            aruco_result = det.detect(self.last_frame)
+            marker_found = aruco_result['detected']
+            
+            if marker_found and aruco_result['corners_2d'] is not None:
+                # Calculamos la posición de las esquinas manuales RELATIVAS al marcador
+                # 1. Homografía entre el marcador real y la imagen
+                marker_corners_2d = aruco_result['corners_2d'].reshape(-1, 2).astype(np.float32)
+                # Puntos reales del marcador centrados en (0,0)
+                # OpenCV ArUco devuelve esquinas en orden: TopLeft, TopRight, BottomRight, BottomLeft
+                # En el sistema de coordenadas del marcador (X derecha, Y hacia adelante/arriba):
+                # TopLeft  (0) -> (-s, +s)  (izquierda, arriba)
+                # TopRight (1) -> (+s, +s)  (derecha, arriba)
+                # BotRight (2) -> (+s, -s)  (derecha, abajo)
+                # BotLeft  (3) -> (-s, -s)  (izquierda, abajo)
+                s = size_cm / 2.0
+                marker_corners_3d = np.array([[-s, s], [s, s], [s, -s], [-s, -s]], dtype=np.float32)
+                
+                homo, _ = cv2.findHomography(marker_corners_2d, marker_corners_3d)
+                
+                if homo is not None:
+                    # 2. Transformar esquinas manuales (2D pixel) a coordenadas del plano ArUco (3D real)
+                    # IMPORTANTE: self.table_corners están en coordenadas de DISPLAY (Rotated 180)
+                    # ArUco se detectó en LAST_FRAME (Raw)
+                    # Debemos transformar los puntos de Display -> Raw antes de aplicar la homografía
+                    h, w = self.last_frame.shape[:2]
+                    
+                    # Invertir rotación 180 (x -> w-x, y -> h-y)
+                    corners_raw = []
+                    for pt in self.table_corners:
+                        cx, cy = pt
+                        corners_raw.append([w - cx, h - cy])
+                    
+                    manual_corners_2d = np.array(corners_raw, dtype=np.float32).reshape(-1, 1, 2)
+                    manual_corners_aruco = cv2.perspectiveTransform(manual_corners_2d, homo).reshape(-1, 2)
+                    
+                    # 3. Calcular dimensiones y offset
+                    # El offset es el centro del teclado relativo al centro del marcador
+                    center_aruco = manual_corners_aruco.mean(axis=0)
+                    width_cm = np.linalg.norm(manual_corners_aruco[1] - manual_corners_aruco[0])
+                    height_cm = np.linalg.norm(manual_corners_aruco[3] - manual_corners_aruco[0])
+                    
+                    aruco_data = {
+                        'relative_corners_cm': manual_corners_aruco.tolist(),
+                        'offset_x_cm': float(center_aruco[0]),
+                        'offset_y_cm': float(center_aruco[1]),
+                        'width_cm': float(width_cm),
+                        'height_cm': float(height_cm),
+                        'marker_id': int(det.marker_id),
+                        'marker_size_cm': float(size_cm)
+                    }
+                    print(f"[AR] ArUco vinculado! Offset: ({aruco_data['offset_x_cm']:.2f}, {aruco_data['offset_y_cm']:.2f})")
+                    
+                    # Actualizar StereoConfig en caliente (opcional)
+                    StereoConfig.ARUCO_KEYBOARD_OFFSET_X = aruco_data['offset_x_cm']
+                    StereoConfig.ARUCO_KEYBOARD_OFFSET_Y = aruco_data['offset_y_cm']
+                    StereoConfig.ARUCO_KEYBOARD_WIDTH_CM = aruco_data['width_cm']
+                    StereoConfig.ARUCO_KEYBOARD_HEIGHT_CM = aruco_data['height_cm']
+
         try:
             with open(CalibrationConfig.CALIBRATION_FILE, 'r') as f:
                 data = json.load(f)
@@ -1582,18 +1777,17 @@ class QtCalibrationManager(QObject):
             data['table_definition'] = {
                 'corners': self.table_corners,
                 'camera': 'left',
-                'resolution': [frame_w, frame_h]
+                'resolution': [frame_w, frame_h],
+                'aruco_link': aruco_data
             }
             
             with open(CalibrationConfig.CALIBRATION_FILE, 'w') as f:
                 json.dump(data, f, indent=4)
                 
-            print(f"[AR] Definición de mesa guardada: {self.table_corners} (Res: {frame_w}x{frame_h})")
+            print(f"✓ Definición de mesa guardada.")
             
         except Exception as e:
-            print(f"Error guardando mesa: {e}")
-            self.board_rows = 7
-            self.square_size_mm = CalibrationConfig.DEFAULT_SQUARE_SIZE_MM
+            print(f"✗ Error guardando mesa: {e}")
     
     def _save_phase1_only(self):
         """Guarda solo Fase 1"""

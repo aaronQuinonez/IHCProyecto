@@ -229,6 +229,20 @@ class StereoConfig:
     CROSSHAIR_LINE_WIDTH = 2        # Grosor de líneas de cruces
     CROSSHAIR_CIRCLE_WIDTH = 1      # Grosor de círculo de cruces
     
+    # ==================== ARUCO AR TRACKING ====================
+    ARUCO_ENABLED = False           # Usar ArUco para posicionar teclado (vs manual)
+    ARUCO_MARKER_SIZE_CM = 15.0     # Tamaño físico del marcador impreso (cm)
+    ARUCO_MARKER_ID = 0             # ID del marcador a detectar
+    ARUCO_DICTIONARY = "4X4_50"     # Diccionario ArUco a usar
+    
+    # Posición del teclado relativa al marcador (cm)
+    ARUCO_KEYBOARD_OFFSET_X = 5.0   # Distancia horizontal desde centro del marcador
+    ARUCO_KEYBOARD_OFFSET_Y = 0.0   # Distancia vertical desde centro del marcador
+    
+    # Dimensiones del teclado virtual en cm (para escala correcta)
+    ARUCO_KEYBOARD_WIDTH_CM = 40.0  # Ancho del teclado (~40cm para 2 octavas)
+    ARUCO_KEYBOARD_HEIGHT_CM = 12.0 # Profundidad del teclado
+    
     # ==================== MÉTODOS ====================
     
     @staticmethod
@@ -311,6 +325,12 @@ class StereoConfig:
                 if 'resolution' in calib_data['table_definition']:
                     StereoConfig.CALIB_PIXEL_WIDTH = calib_data['table_definition']['resolution'][0]
                     StereoConfig.CALIB_PIXEL_HEIGHT = calib_data['table_definition']['resolution'][1]
+                    
+                    # [AR-FIX] Priorizar la resolución de calibración para el runtime
+                    # Esto evita problemas de Aspect Ratio y escala
+                    StereoConfig.PIXEL_WIDTH = StereoConfig.CALIB_PIXEL_WIDTH
+                    StereoConfig.PIXEL_HEIGHT = StereoConfig.CALIB_PIXEL_HEIGHT
+                    print(f"[INFO] Resolución ajustada a calibración: {StereoConfig.PIXEL_WIDTH}x{StereoConfig.PIXEL_HEIGHT}")
                 else:
                      # Si no existe, asumir valores por defecto (ej. HD) o None
                      StereoConfig.CALIB_PIXEL_WIDTH = 1280

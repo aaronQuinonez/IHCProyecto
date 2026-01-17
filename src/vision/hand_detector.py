@@ -126,6 +126,9 @@ class HandDetector():
 
     def drawTips(self, img, mirror=False, rotate_180=False):
         if self.results.multi_hand_landmarks:
+            # [FIX] Usar dimensiones del frame ACTUAL, no las almacenadas
+            h, w = img.shape[:2]
+            
             for id, handLandmarks in enumerate(
                     self.results.multi_hand_landmarks):
                 # print('handLandmarks=id:{}'.format(id))
@@ -133,14 +136,14 @@ class HandDetector():
                     lx, ly = handLandmarks.landmark[indx_tips].x, handLandmarks.landmark[indx_tips].y
                     
                     if rotate_180:
-                        cx = (1.0 - lx) * self.img_width
-                        cy = (1.0 - ly) * self.img_height
+                        cx = (1.0 - lx) * w
+                        cy = (1.0 - ly) * h
                     elif mirror:
-                        cx = (1.0 - lx) * self.img_width
-                        cy = ly * self.img_height
+                        cx = (1.0 - lx) * w
+                        cy = ly * h
                     else:
-                        cx = lx * self.img_width
-                        cy = ly * self.img_height
+                        cx = lx * w
+                        cy = ly * h
                         
                     cv2.circle(img, (int(cx), int(cy)),
                                7, (255, 0, 0), cv2.FILLED)

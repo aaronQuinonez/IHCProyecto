@@ -13,6 +13,7 @@ import math
 from src.utils import round_half_up
 from src.config.theme import Theme
 from src.vision.stereo_config import StereoConfig
+from src.piano.keyboard_renderer import KeyboardRenderer
 
 class VirtualKeyboard():
     __white_map = {
@@ -52,8 +53,7 @@ class VirtualKeyboard():
         self.kb_white_n_keys = kb_white_n_keys
         self.kb_len = self.kb_x1 - self.kb_x0
         
-        print(f"[VirtualKeyboard] Init: {self.canvas_w}x{self.canvas_h}")
-        print(f"[VirtualKeyboard] Coords: ({self.kb_x0},{self.kb_y0}) to ({self.kb_x1},{self.kb_y1})")
+        pass
         
         self.white_kb_height = self.kb_y1 - self.kb_y0
         self.white_key_width = int(self.kb_len / self.kb_white_n_keys)
@@ -192,149 +192,70 @@ class VirtualKeyboard():
             # === GENERACIÓN DE POLÍGONOS (Lógica Geométrica) ===
             logical_geoms = self.generate_logical_key_geometries()
             
-            # Capa de overlay para transparencias
-            overlay = img.copy()
+            # === NUEVO RENDERIZADOR ===
+            # Lazy initialization del renderizador profesional
+            if not hasattr(self, 'renderer'):
+                self.renderer = KeyboardRenderer(num_octaves=2) # Asumimos 2 octavas estándar
             
-            # Colores Cyberpunk desde el TEMA Global (Semántico)
-            COLOR_WHITE_IDLE = Theme.KEY_AR_WHITE_IDLE
-            COLOR_WHITE_ACTIVE = Theme.KEY_AR_WHITE_ACTIVE
+            # Mapeo de IDs: Sistema (Cromático) -> Renderer (Secuencial Visual)
+            # Sistema: 0=Do, 1=Do#, 2=Re...
+            # Renderer: 0..13 (Blancas), 14..23 (Negras)
             
-            COLOR_BLACK_IDLE = Theme.KEY_AR_BLACK_IDLE
-            COLOR_BLACK_ACTIVE = Theme.KEY_AR_BLACK_ACTIVE
+            renderer_active_keys = []
+            if active_keys:
+                # Construir mapas inversos si no existen
+                if not hasattr(self, '_chromatic_to_renderer_map'):
+                     self._chromatic_to_renderer_map = {}
+                     
+                     # Blancas: 0..13
+                     for w_idx in range(14): # 2 octavas * 7
+                         if w_idx in self.__white_map:
+                             chrom_id = self.__white_map[w_idx]
+                             self._chromatic_to_renderer_map[chrom_id] = w_idx
+                     
+                     # Negras: 14..23
+                     # Las negras se generan en orden de aparición en el renderer.
+                     # KeyboardRenderer: black_keys list order.
+                     # Octava 0: C#, D#, F#, G#, A# (5 teclas)
+                     # Octava 1: C#, D#, F#, G#, A# (5 teclas)
+                     # Total offset = 14
+                     
+                     black_chromatic_ids = [
+                         1, 3, 6, 8, 10,       # Octava 0
+                         13, 15, 18, 20, 22    # Octava 1
+                     ]
+                     
+                     for i, chrom_id in enumerate(black_chromatic_ids):
+                         renderer_id = 14 + i
+                         self._chromatic_to_renderer_map[chrom_id] = renderer_id
+                
+                # Convertir active_keys
+                for k in active_keys:
+                    if k in self._chromatic_to_renderer_map:
+                        renderer_active_keys.append(self._chromatic_to_renderer_map[k])
             
-            # Texto
-            FONT = cv2.FONT_HERSHEY_SIMPLEX
+            # Delegar renderizado visual al módulo profesional
+            # Nota: 'img' se modifica in-place
+            self.renderer.render(img, corners, renderer_active_keys, hand_landmarks)
             
-            # Listas para agrupar polígonos por capa y optimizar blending
-            # Cada capa: (alpha, list_of_contours, color)
-            # PERO como Active puede tener diferentes colores (si quisiéramos), 
-            # agruparemos por (Tipos de Tecla) para aplicar alpha global del grupo.
-            
-            # Grupos:
-            # 1. White Idle (Alpha bajo)
-            # 2. Black Idle (Alpha medio)
-            # 3. Active (Alpha alto)
-            
-            polys_white_idle = []
-            polys_black_idle = []
-            polys_active = []
-            
-            # Guardamos bordes para dibujar al final (siempre opacos)
-            borders_to_draw = [] # (pts, color, thickness)
-
-            # Iterar teclas y clasificar
-            sorted_geoms = sorted(logical_geoms, key=lambda x: 1 if x['black'] else 0)
-            
-            for key_geom in sorted_geoms:
+            # === GENERACIÓN DE POLÍGONOS DE DETECCIÓN (Invisible) ===
+            # Mantenemos esta lógica para que el clic funcione
+            # pero ya NO DIBUJAMOS nada aquí.
+            for key_geom in sorted(logical_geoms, key=lambda x: 1 if x['black'] else 0):
                 pts_src = key_geom['pts'] 
                 pts_dst = cv2.perspectiveTransform(pts_src, matrix)[0]
                 poly_pts = pts_dst.astype(np.int32)
                 
-                # Guardar para detección
                 self.screen_key_polygons.append({
                     'id': key_geom['id'],
                     'black': key_geom['black'],
                     'contour': poly_pts
                 })
-                
-                # --- Lógica Visual ---
-                k_id = key_geom['id']
-                is_active = k_id in active_keys
-                is_black = key_geom['black']
-                
-                if is_active:
-                    # Active Group
-                    color = Theme.KEY_AR_BLACK_ACTIVE if is_black else Theme.KEY_AR_WHITE_ACTIVE
-                    polys_active.append((poly_pts, color))
-                elif is_black:
-                    # Black Idle Group
-                    polys_black_idle.append((poly_pts, Theme.KEY_AR_BLACK_IDLE))
-                else:
-                    # White Idle Group
-                    polys_white_idle.append((poly_pts, Theme.KEY_AR_WHITE_IDLE))
 
-                # Definir Borde
-                border_is_distinct = Theme.KEY_AR_BORDER
-                # Si está activo, borde blanco brillante. Si no, borde separador.
-                border_color = (255, 255, 255) if is_active else border_is_distinct
-                border_thick = 2 if is_active else 1
-                borders_to_draw.append((poly_pts, border_color, border_thick))
-                
-                # Etiquetas de texto (directo en img final, al final)
-                # ... (lo haremos después del blending)
-
-            # === DIBUJADO DE TECLAS (SÓLIDO) ===
-            # Ya no hacemos blending. Dibujamos directamente sobre 'img' (o overlay con alpha 1.0)
-            # El usuario pide "colores sólidos e intensos".
-            
-            # Dibujar Capas (Fondo -> Frente)
-            # White Idle
-            for pts, col in polys_white_idle:
-                 cv2.fillPoly(img, [pts], col)
-            
-            # Black Idle
-            for pts, col in polys_black_idle:
-                 cv2.fillPoly(img, [pts], col)
-            
-            # Active (Siempre encima y brillante)
-            for pts, col in polys_active:
-                 cv2.fillPoly(img, [pts], col)
-            
-            # === DIBUJAR BORDES Y TEXTO (OPACOS) ===
-            for pts, col, thick in borders_to_draw:
-                cv2.polylines(img, [pts], isClosed=True, color=col, thickness=thick, lineType=cv2.LINE_AA)
-            
-            # Redibujar texto
-            for item in self.screen_key_polygons:
-                if not item['black']:
-                    k_id = item['id']
-                    poly_pts = item['contour']
-                    M = cv2.moments(poly_pts)
-                    if M["m00"] != 0:
-                        cX = int(M["m10"] / M["m00"])
-                        cY = int(M["m01"] / M["m00"])
-                        note_name = self.get_note_name(k_id)
-                        text_size = cv2.getTextSize(note_name, FONT, 0.4, 1)[0]
-                        text_x = cX - text_size[0] // 2
-                        text_y = cY + text_size[1] // 2 + 10
-                        cv2.putText(img, note_name, (text_x+1, text_y+1), FONT, 0.4, (0,0,0), 2)
-                        cv2.putText(img, note_name, (text_x, text_y), FONT, 0.4, (255,255,255), 1)
-
-            # === OCLUSIÓN DE MANOS (AR) ===
-            # Si hay landmarks de manos, creamos una máscara para "borrar" el teclado
-            # y restaurar la imagen original de la mano.
-            if hand_landmarks:
-                # Crear máscara de manos
-                hand_mask = np.zeros(img.shape[:2], dtype=np.uint8)
-                
-                # Imagen original antes de dibujar teclado (pasada o necesita copia previa? -> img ya está modificada)
-                # ERROR: 'img' ya tiene el teclado dibujado encima.
-                # Necesitamos copar 'img' AL PRINCIPIO de la función para restaurar.
-                # Como no lo hicimos, usaremos la copia 'overlay' que hicimos antes de dibujar (si overlay era copia limpia).
-                # Revisando: overlay = img.copy() linea 196 (antes de dibujar nada). Perfecto.
-                
-                # Pero espera, 'overlay' NO se ha modificado en este nuevo flujo (ya no usé fillPoly en overlay, sino en img).
-                # Entonces 'overlay' contiene la imagen ORIGINAL de la cámara limpia. ¡Exacto!
-                
-                for hand_pts in hand_landmarks:
-                    # Convertir lista lista a np array
-                    pts_np = np.array(hand_pts, dtype=np.int32)
-                    if len(pts_np) > 0:
-                        # Calcular Convex Hull para cubrir toda la mano
-                        hull = cv2.convexHull(pts_np)
-                        # Dibujar hull en mascara (Blanco = Mano)
-                        cv2.fillPoly(hand_mask, [hull], 255)
-                        
-                        # [OPCIONAL] Dilatar un poco para cubrir bordes
-                        # kernel = np.ones((5,5), np.uint8)
-                        # hand_mask = cv2.dilate(hand_mask, kernel, iterations=1)
-                
-                # Restaurar imagen original donde está la máscara de mano
-                # img[mask] = overlay[mask]
-                img[hand_mask == 255] = overlay[hand_mask == 255]
-            
         except Exception as e:
-            print(f"[VirtualKeyboard] Error AR Matrix: {e}")
+            print(f"[VirtualKeyboard] Error AR Render: {e}")
+            import traceback
+            traceback.print_exc()
             self.M_inv = None
             self.ar_mode_active = False
             self.screen_key_polygons = []
@@ -365,15 +286,27 @@ class VirtualKeyboard():
         use_perspective = False
         debug_msg = ""
         
+    def draw_virtual_keyboard(self, img, active_keys=[], hand_landmarks=[], corners=None):
+        """
+        Dibuja el teclado virtual en la imagen proporcionada.
+        Args:
+            img: Imagen de destino
+            active_keys: Lista de IDs de teclas activas para feedback visual
+            hand_landmarks: Lista de punots de manos para oclusión
+            corners: Lista opcional de 4 esquinas [(x,y)...] para dibujar. 
+                     Si es None, usa StereoConfig.TABLE_CORNERS
+        """
+        # Calcular esquinas si no se proporcionan
+        use_perspective = False
+        
         # Resetear estado AR
         self.ar_mode_active = False
         self.M_inv = None
         
-        # Copia de esquinas para no modificar las originales de StereoConfig
-        ar_corners = None
+        target_corners = corners if corners is not None else StereoConfig.TABLE_CORNERS
         
-        if StereoConfig.TABLE_CORNERS is not None:
-             self.current_corners = StereoConfig.TABLE_CORNERS
+        if target_corners is not None:
+             self.current_corners = target_corners
              use_perspective = True
              debug_msg = "AR MODE (Corners Loaded)"
         else:
@@ -473,7 +406,9 @@ class VirtualKeyboard():
                 use_perspective = True
                 # print(f"[VirtualKeyboard] Rectified to PERFECT RECTANGLE: {current_corners}")
             else:
-                 print(f"[WARN] {debug_msg}")
+                if not hasattr(self, '_warn_shown_ar_invalid'):
+                     print(f"[WARN] {debug_msg} (Further warnings suppressed)")
+                     self._warn_shown_ar_invalid = True
         else:
             if not StereoConfig.TABLE_CORNERS:
                 debug_msg = "NO AR DATA"

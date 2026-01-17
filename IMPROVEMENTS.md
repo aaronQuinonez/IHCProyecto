@@ -169,6 +169,20 @@ for det in filtered_detections:
 
 ---
 
+### 6. **Calibration Coordinate Inversion (Display vs Raw)**
+**Ubicación:** `src/calibration/qt_calibration_manager.py`
+
+**Problema:**
+- **Visualización:** El usuario marca puntos sobre una imagen "espejo" (Display: Rotated 180°).
+- **Cálculo:** El homógrafo ArUco se calculaba usando la imagen RAW (Original).
+- **Resultado:** Desajuste geométrico masivo. (0,0) en pantalla es (W,H) en Raw.
+- **Síntoma:** El teclado aparece "skewed" (distorsionado) o invertido en el Modo Libre.
+
+**Solución (Fixed 2026-01-16):**
+- Transformar coordenadas manuales `Display -> Raw` antes de guardar con `x_raw = W - x_disp`.
+
+---
+
 ## 🟡 FALLAS MODERADAS (Media Prioridad)
 
 ### 6. **Depth Range Too Permissive**

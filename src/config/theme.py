@@ -107,6 +107,14 @@ class Theme:
     KEY_AR_TEXT_SHADOW = ColorPalette.BLACK
     KEY_AR_TEXT_MAIN = ColorPalette.WHITE
     KEY_AR_BORDER = ColorPalette.WHITE        # Outlines for separation
+    KEY_AR_SHADOW = (60, 60, 60)              # Key shadow color (BGR)
+    
+    # --- ArUco Marker Debug Colors ---
+    ARUCO_MARKER_OUTLINE = ColorPalette.GREEN_VIVID    # Detected marker outline
+    ARUCO_KEYBOARD_OUTLINE = (255, 0, 255)             # Magenta - keyboard projection
+    ARUCO_AXIS_X = (0, 0, 255)                         # Red - X axis
+    ARUCO_AXIS_Y = (0, 255, 0)                         # Green - Y axis
+    ARUCO_AXIS_Z = (255, 0, 0)                         # Blue - Z axis
     
     # --- Progress Bars ---
     PROGRESS_BG = ColorPalette.LIGHT_GRAY

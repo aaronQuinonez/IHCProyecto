@@ -8,6 +8,7 @@ Maneja detección de manos, triangulación 3D, y reproducción de audio
 import numpy as np
 from collections import deque
 from src.config.app_config import AppConfig
+from src.vision.stereo_config import StereoConfig
 
 
 class KeyboardProcessor:
@@ -17,6 +18,7 @@ class KeyboardProcessor:
     - Triangulación 3D de profundidad
     - Mapeo de contactos con teclas
     - Reproducción de audio
+    - ArUco tracking (opcional)
     """
     
     def __init__(self, keyboard_mapper, angler, depth_estimator, 
@@ -45,6 +47,64 @@ class KeyboardProcessor:
         # Buffer de suavizado temporal para reducir jitter
         # [VISUAL] Buffer para feedback visual en el siguiente frame
         self.prev_active_keys = []
+        
+        # === ArUco Tracking (opcional) ===
+        self.aruco_detector = None
+        self.aruco_enabled = StereoConfig.ARUCO_ENABLED
+        self.aruco_keyboard_corners = None
+        
+        # Intentar cargar offsets desde calibración (sobrescribe StereoConfig)
+        marker_size = StereoConfig.ARUCO_MARKER_SIZE_CM
+        offset_x = StereoConfig.ARUCO_KEYBOARD_OFFSET_X
+        offset_y = StereoConfig.ARUCO_KEYBOARD_OFFSET_Y
+        width_cm = StereoConfig.ARUCO_KEYBOARD_WIDTH_CM
+        height_cm = StereoConfig.ARUCO_KEYBOARD_HEIGHT_CM
+        marker_id = StereoConfig.ARUCO_MARKER_ID
+
+        try:
+            from src.calibration.calibration_config import CalibrationConfig
+            import json
+            if CalibrationConfig.CALIBRATION_FILE.exists():
+                with open(CalibrationConfig.CALIBRATION_FILE, 'r') as f:
+                    data = json.load(f)
+                
+                if 'table_definition' in data and 'aruco_link' in data['table_definition']:
+                    link = data['table_definition']['aruco_link']
+                    if link:
+                        offset_x = link.get('offset_x_cm', offset_x)
+                        offset_y = link.get('offset_y_cm', offset_y)
+                        marker_size = link.get('marker_size_cm', marker_size)
+                        width_cm = link.get('width_cm', width_cm)
+                        height_cm = link.get('height_cm', height_cm)
+                        marker_id = link.get('marker_id', marker_id)
+                        print(f"[KeyboardProcessor] ArUco calibration LOADED: Offset({offset_x}, {offset_y})")
+        except Exception as e:
+            print(f"[KeyboardProcessor] Error loading ArUco calibration: {e}")
+
+        if self.aruco_enabled:
+            try:
+                from src.vision.aruco_detector import ArucoDetector
+                
+                # Obtener matrices de cámara para el detector
+                cam_matrix = None
+                dist_coeffs = None
+                if depth_estimator and hasattr(depth_estimator, 'cam_matrix_left'):
+                    cam_matrix = depth_estimator.cam_matrix_left
+                    dist_coeffs = depth_estimator.dist_coeffs_left
+
+                self.aruco_detector = ArucoDetector(
+                    camera_matrix=cam_matrix,
+                    dist_coeffs=dist_coeffs,
+                    marker_size_cm=marker_size,
+                    dictionary_name=StereoConfig.ARUCO_DICTIONARY,
+                    marker_id=marker_id
+                )
+                self.aruco_detector.set_keyboard_offset(offset_x, offset_y)
+                self.aruco_detector.set_keyboard_dimensions(width_cm, height_cm)
+                print(f"[KeyboardProcessor] ArUco tracking READY (Size: {marker_size}cm)")
+            except Exception as e:
+                print(f"[KeyboardProcessor] ArUco init failed: {e}")
+                self.aruco_enabled = False
         
     def process_and_play(self, frame_left, frame_right, virtual_keyboard, 
                         hand_detector_left, hand_detector_right, 
@@ -89,6 +149,18 @@ class KeyboardProcessor:
         hand_landmarks_for_occlusion = []
         if hands_detected_left:
             hand_landmarks_for_occlusion.extend(hand_detector_left.getAllLandmarks())
+        
+        # === PASO 1.5: ArUco Detection (si está habilitado) ===
+        if self.aruco_enabled and self.aruco_detector:
+            aruco_result = self.aruco_detector.detect(frame_left)
+            if aruco_result['detected']:
+                # Actualizar esquinas del teclado desde ArUco
+                self.aruco_keyboard_corners = aruco_result['keyboard_corners']
+                # Actualizar TABLE_CORNERS para que VirtualKeyboard lo use
+                StereoConfig.TABLE_CORNERS = aruco_result['keyboard_corners'].tolist()
+                
+                # Debug: dibujar marcador detectado
+                # self.aruco_detector.draw_marker_debug(frame_draw, aruco_result)
         
         # === PASO 2: Dibujar teclado PRIMERO (debajo de las manos) ===
         # Siempre dibujamos en el frame de visualización

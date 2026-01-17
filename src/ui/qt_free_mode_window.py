@@ -101,6 +101,7 @@ class FreeModeWindow(QMainWindow):
         """)
         
         self._build_ui()
+        self._init_aruco()  # Inicializar detector ArUco
         self._start_camera_feed()
 
     def _build_ui(self):
@@ -185,6 +186,91 @@ class FreeModeWindow(QMainWindow):
         self.timer.timeout.connect(self._update_frame)
         self.timer.start(30) # ~33 FPS
 
+    def _init_aruco(self):
+        """Inicializar detector ArUco duplicando lógica de KeyboardProcessor"""
+        self.aruco_detector = None
+        try:
+            from src.vision.stereo_config import StereoConfig
+            from src.calibration.calibration_config import CalibrationConfig
+            import json
+            
+            # 1. Cargar offsets
+            marker_size = StereoConfig.ARUCO_MARKER_SIZE_CM
+            offset_x = StereoConfig.ARUCO_KEYBOARD_OFFSET_X
+            offset_y = StereoConfig.ARUCO_KEYBOARD_OFFSET_Y
+            width_cm = StereoConfig.ARUCO_KEYBOARD_WIDTH_CM
+            height_cm = StereoConfig.ARUCO_KEYBOARD_HEIGHT_CM
+            marker_id = StereoConfig.ARUCO_MARKER_ID
+            relative_corners = None
+            
+            if CalibrationConfig.CALIBRATION_FILE.exists():
+                with open(CalibrationConfig.CALIBRATION_FILE, 'r') as f:
+                    data = json.load(f)
+                if 'table_definition' in data and 'aruco_link' in data['table_definition']:
+                    link = data['table_definition']['aruco_link']
+                    if link:
+                        offset_x = link.get('offset_x_cm', offset_x)
+                        offset_y = link.get('offset_y_cm', offset_y)
+                        if 'relative_corners_cm' in link:
+                            relative_corners = link['relative_corners_cm']
+                        marker_size = link.get('marker_size_cm', marker_size)
+                        width_cm = link.get('width_cm', width_cm)
+                        height_cm = link.get('height_cm', height_cm)
+                        marker_id = link.get('marker_id', marker_id)
+            
+            # 2. Inicializar Detector
+            from src.vision.aruco_detector import ArucoDetector
+            
+            cam_matrix = None
+            dist_coeffs = None
+            if self.depth_estimator:
+                # Intentar obtener matriz desde DepthEstimator (usando nombres correctos K_left/D_left)
+                if hasattr(self.depth_estimator, 'K_left'):
+                    cam_matrix = self.depth_estimator.K_left.copy()
+                    dist_coeffs = self.depth_estimator.D_left
+                # Fallback por si acaso usa nombres antiguos
+                elif hasattr(self.depth_estimator, 'cam_matrix_left'):
+                    cam_matrix = self.depth_estimator.cam_matrix_left.copy()
+                    dist_coeffs = self.depth_estimator.dist_coeffs_left
+                
+                # [AR-FIX] Escalar matriz de cámara si la resolución actual difiere de la calibración
+                # Esto es CRUCIAL si calibraste a 1280x720 y corres a 640x480
+                calib_w = 0
+                if hasattr(StereoConfig, 'CALIB_PIXEL_WIDTH'):
+                     calib_w = StereoConfig.CALIB_PIXEL_WIDTH
+                
+                # Asumimos que StereoConfig tiene la resolución objetivo actual
+                target_w = StereoConfig.PIXEL_WIDTH
+                
+                print(f"[FreeMode] DEBUG: calib_w={calib_w}, target_w={target_w}")
+                
+                if calib_w > 0 and target_w > 0 and calib_w != target_w:
+                     scale = target_w / calib_w
+                     cam_matrix = cam_matrix * scale
+                     cam_matrix[2, 2] = 1.0 # Restaurar elemento de normalización
+                     print(f"[FreeMode] Scaled Camera Matrix by {scale:.2f} ({calib_w}->{target_w}) for ArUco")
+
+            self.aruco_detector = ArucoDetector(
+                camera_matrix=cam_matrix,
+                dist_coeffs=dist_coeffs,
+                marker_size_cm=marker_size,
+                dictionary_name=StereoConfig.ARUCO_DICTIONARY,
+                marker_id=marker_id
+            )
+            # Use relative corners if available (handles rotation), else fallback to offsets
+            if relative_corners:
+                self.aruco_detector.set_relative_corners(relative_corners)
+                self.aruco_detector.set_relative_corners(relative_corners)
+            else:
+                self.aruco_detector.set_keyboard_offset(offset_x, offset_y)
+                self.aruco_detector.set_keyboard_dimensions(width_cm, height_cm)
+                
+            pass
+            
+        except Exception as e:
+            print(f"[FreeMode] ArUco Init Warning: {e}")
+            self.aruco_detector = None
+
     def _update_frame(self):
         if not self.is_running:
             return
@@ -205,6 +291,20 @@ class FreeModeWindow(QMainWindow):
         # Aplicar transformaciones para DETECCIÓN (no afecta geometría)
         frame_left = StereoConfig.apply_camera_transforms(frame_left)
         frame_right = StereoConfig.apply_camera_transforms(frame_right)
+        
+        # === ARUCO TRACKING EN TIEMPO REAL ===
+        if self.aruco_detector:
+            try:
+                aruco_result = self.aruco_detector.detect(frame_left)
+                if aruco_result['detected']:
+                     # Actualizar posición del teclado visual
+                     StereoConfig.TABLE_CORNERS = aruco_result['keyboard_corners'].tolist()
+                     # print("[FreeMode] ArUco Updated Keybaord")
+                else:
+                     # [FIX] Ocultar teclado cuando el marcador no está visible
+                     StereoConfig.TABLE_CORNERS = None
+            except Exception as e:
+                pass
         
         # Guardamos referencia a frames sin espejo para visualización después
         # (el espejo se aplica al final, después de dibujar todo)
@@ -234,8 +334,67 @@ class FreeModeWindow(QMainWindow):
                 hr_hands, hr_tips = [], []
             
             # C. DIBUJAR SOBRE EL FRAME ESPEJADO
-            # 1. Dibujar teclado (se dibuja normal sobre frame espejado)
-            self.virtual_keyboard.draw_virtual_keyboard(frame_left_display)
+            # 1. Dibujar teclado con oclusión de manos y teclas activas
+            h_frame, w_frame = frame_left.shape[:2]
+            
+            hand_landmarks_for_occlusion = []
+            
+            if self.hand_detector_left and self.hand_detector_left.results.multi_hand_landmarks:
+                for hl in self.hand_detector_left.results.multi_hand_landmarks:
+                    # Transformar landmarks raw -> display para oclusión visual correcta
+                    for lm in hl.landmark:
+                        raw_x, raw_y = lm.x * w_frame, lm.y * h_frame
+                        disp_pt = StereoConfig.transform_point_for_display((raw_x, raw_y), w_frame, h_frame)
+                        hand_landmarks_for_occlusion.append(disp_pt)
+            
+            if self.hand_detector_right and self.hand_detector_right.results.multi_hand_landmarks:
+                for hr in self.hand_detector_right.results.multi_hand_landmarks:
+                    for lm in hr.landmark:
+                        raw_x, raw_y = lm.x * w_frame, lm.y * h_frame
+                        disp_pt = StereoConfig.transform_point_for_display((raw_x, raw_y), w_frame, h_frame)
+                        hand_landmarks_for_occlusion.append(disp_pt)             
+            # Usar active_keys del procesador si existe
+            active_keys_visual = []
+            if hasattr(self, 'processor') and self.processor:
+                active_keys_visual = getattr(self.processor, 'prev_active_keys', [])
+            
+            # [AR Fix] Transformar esquinas RAW -> DISPLAY para dibujar
+            # StereoConfig.TABLE_CORNERS está en Raw (para detección)
+            # frame_left_display está en Display (180 grados)
+            display_corners = None
+            if StereoConfig.TABLE_CORNERS is not None:
+                h_raw, w_raw = frame_left.shape[:2]
+                display_corners = []
+                for pt in StereoConfig.TABLE_CORNERS:
+                    # pt es [x, y]
+                    dt_pt = StereoConfig.transform_point_for_display(pt, w_raw, h_raw)
+                    display_corners.append(dt_pt)
+            
+            # --- STRUCTURED DIAGNOSTICS (Every 60 frames) ---
+            if not hasattr(self, '_diag_counter'): self._diag_counter = 0
+            self._diag_counter += 1
+            if self._diag_counter % 60 == 0:
+                status = "DETECTED" if self.aruco_detector and self.aruco_detector.detection_valid else "LOST"
+                
+                raw_pt = StereoConfig.TABLE_CORNERS[0] if StereoConfig.TABLE_CORNERS is not None else "None"
+                disp_pt = display_corners[0] if display_corners else "None"
+                
+                print(f"[AR-DIAG] Status={status} | RawPt[0]={raw_pt} | DispPt[0]={disp_pt} | Frame={w_raw}x{h_raw}")
+
+                if StereoConfig.TABLE_CORNERS is not None:
+                     # Validate range
+                     x_raw = StereoConfig.TABLE_CORNERS[0][0]
+                     if x_raw < 0 or x_raw > w_raw:
+                         print(f"[AR-WARN] Raw X {x_raw} outside frame width {w_raw}!")
+            
+            # [FIX] Solo dibujar teclado si ArUco está detectado (display_corners no es None)
+            if display_corners is not None:
+                self.virtual_keyboard.draw_virtual_keyboard(
+                    frame_left_display, 
+                    active_keys=active_keys_visual,
+                    hand_landmarks=hand_landmarks_for_occlusion,
+                    corners=display_corners
+                )
             
             # D. Procesar teclas y audio
             if len(hl_tips) > 0 and len(hr_tips) > 0:
@@ -250,9 +409,6 @@ class FreeModeWindow(QMainWindow):
                 # Si no hay distancia calibrada, no podemos detectar notas correctamente
                 if keyboard_distance is None:
                     # Mostrar advertencia una sola vez
-                    if not hasattr(self, '_calibration_warning_shown'):
-                        print("[ALERTA] Fase 3 no completada - la deteccion de notas no funcionara")
-                        print("  Ejecuta: Recalibrar → Fase 3 para calibrar la distancia del teclado")
                         self._calibration_warning_shown = True
                     # Continuar sin procesar notas
                 else:
@@ -264,11 +420,7 @@ class FreeModeWindow(QMainWindow):
                         # Si MediaPipe swapea IDs, perderemos tracking momentáneamente (dropout),
                         # pero KeyboardMapper ahora maneja dropouts asumiendo Depth=99 (Aire) en lugar de Touch.
                         
-                        # DEBUG DIAGNOSTICO:
-                        if not hasattr(self, '_diag_counter'): self._diag_counter = 0
-                        self._diag_counter += 1
-                        if self._diag_counter % 30 == 0:
-                            print(f"[DIAG] Manos: L={len(hl_tips)} R={len(hr_tips)}")
+                        pass
 
                 # === GEOMETRIC MATCHING STRATEGY (NUEVO) ===
                 # Reemplazamos el matching por ID estricto con heurísticas posicionales
@@ -379,17 +531,19 @@ class FreeModeWindow(QMainWindow):
                                     finger_depths_dict[(fl[0], fl[1])] = depth_relative
                 
                 # 4. Asignar mapa de teclas
-                # IMPORTANTE: Transformar coordenadas RAW a VISUALES para que coincidan con el teclado dibujado
+                # [FIX] Los polígonos del teclado (screen_key_polygons) se generan en espacio DISPLAY
+                # porque draw_perspective recibe display_corners
+                # Por lo tanto, los dedos también deben estar en coordenadas DISPLAY
                 h_frame, w_frame = frame_left.shape[:2]
-                hl_tips_visual = []
+                hl_tips_display = []
                 for t in hl_tips:
                     # t = [hand_id, tip_id, x, y]
-                    vx, vy = StereoConfig.transform_point_for_display((t[2], t[3]), w_frame, h_frame)
-                    hl_tips_visual.append([t[0], t[1], vx, vy])
+                    dx, dy = StereoConfig.transform_point_for_display((t[2], t[3]), w_frame, h_frame)
+                    hl_tips_display.append([t[0], t[1], dx, dy])
 
-                # Obtener teclas presionadas (usando coordenadas visuales transformadas)
+                # Obtener teclas presionadas (usando coordenadas DISPLAY transformadas)
                 on_map, off_map = self.keyboard_mapper.get_kayboard_map(
-                    self.virtual_keyboard, hl_tips_visual, finger_depths_dict, self.keyboard_total_keys
+                    self.virtual_keyboard, hl_tips_display, finger_depths_dict, self.keyboard_total_keys
                 )
                 
                 # E. Reproducir Audio y ACTUALIZAR UI
